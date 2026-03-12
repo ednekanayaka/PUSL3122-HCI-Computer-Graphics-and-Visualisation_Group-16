@@ -27,11 +27,7 @@ dependencies {
 
 application {
     // This will be the real entry
-<<<<<<< HEAD
     mainClass = 'com.roomviz.app.App'
-=======
-    mainClass = 'com.roomviz.App'
->>>>>>> 4515f469bf078ef55ca52bb782bebb250e13f307
 }
 
 java {
