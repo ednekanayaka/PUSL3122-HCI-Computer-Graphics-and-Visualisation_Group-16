@@ -1,4 +1,3 @@
-// ✅ Planner2DPage.java (FULL UPDATED FILE) — paste this entire file exactly as-is:
 
 package com.roomviz.screens;
 
@@ -27,12 +26,15 @@ import java.util.UUID;
  * - Loads and edits the current Design from AppState
  * - Auto-saves changes to DesignRepository
  * - Exposes selected item id in AppState (for Shading & Colour tools)
+ * <<<<<<< HEAD
  *
  * ✅ NEW (Completion):
  * - Real Undo/Redo with history snapshots
  * - Drag-to-move commits to history + autosave
  * - Slider drags are batched (one undo step per drag)
  * - Delete via button OR keyboard delete is undoable
+ * =======
+ * >>>>>>> ec589c173cf68fdbd7815499e595094f5e6412a8
  */
 public class Planner2DPage extends JPanel {
 
@@ -66,7 +68,10 @@ public class Planner2DPage extends JPanel {
     // Debounced autosave timer
     private final javax.swing.Timer autosaveTimer;
 
-    /* ========================= Undo/Redo (history snapshots) ========================= */
+    /*
+     * ========================= Undo/Redo (history snapshots)
+     * =========================
+     */
 
     private final java.util.Deque<java.util.List<FurnitureItem>> undoStack = new java.util.ArrayDeque<>();
     private final java.util.Deque<java.util.List<FurnitureItem>> redoStack = new java.util.ArrayDeque<>();
@@ -107,6 +112,13 @@ public class Planner2DPage extends JPanel {
         add(right, BorderLayout.EAST);
 
         // ===== Autosave timer =====
+
+        // Load items from current design
+        loadDesignIntoCanvas();
+
+        wireRightPanel();
+        updatePropertiesFromSelection();
+
         autosaveTimer = new javax.swing.Timer(700, e -> {
             ((javax.swing.Timer) e.getSource()).stop();
             saveDesign("Auto-saved");
@@ -118,6 +130,7 @@ public class Planner2DPage extends JPanel {
 
         wireRightPanel();
         updatePropertiesFromSelection();
+
     }
 
     private void loadDesignIntoCanvas() {
@@ -135,9 +148,18 @@ public class Planner2DPage extends JPanel {
     }
 
     private void markDirtyAndAutosave() {
-        if (restoringHistory) return;
-        if (autosaveTimer.isRunning()) autosaveTimer.restart();
-        else autosaveTimer.start();
+
+        if (restoringHistory)
+            return;
+        if (autosaveTimer.isRunning())
+            autosaveTimer.restart();
+        else
+            autosaveTimer.start();
+
+        if (autosaveTimer.isRunning())
+            autosaveTimer.restart();
+        else
+            autosaveTimer.start();
 
         autosaved.setForeground(new Color(0xF59E0B));
         autosaved.setText("● Unsaved changes");
@@ -158,7 +180,8 @@ public class Planner2DPage extends JPanel {
 
     private java.util.List<FurnitureItem> deepCopyItems(java.util.List<FurnitureItem> src) {
         java.util.List<FurnitureItem> out = new java.util.ArrayList<>();
-        if (src == null) return out;
+        if (src == null)
+            return out;
 
         for (FurnitureItem it : src) {
             // Use your existing ctor (id, name, kind, x, y, w, h)
@@ -169,15 +192,29 @@ public class Planner2DPage extends JPanel {
                     it.getX(),
                     it.getY(),
                     it.getW(),
-                    it.getH()
-            );
+                    it.getH());
 
             // Copy the rest (safe even if defaults)
-            try { c.setRotation(it.getRotation()); } catch (Exception ignored) {}
-            try { c.setColorHex(it.getColorHex()); } catch (Exception ignored) {}
-            try { c.setShadingPercent(it.getShadingPercent()); } catch (Exception ignored) {}
-            try { c.setMaterial(it.getMaterial()); } catch (Exception ignored) {}
-            try { c.setLighting(it.getLighting()); } catch (Exception ignored) {}
+            try {
+                c.setRotation(it.getRotation());
+            } catch (Exception ignored) {
+            }
+            try {
+                c.setColorHex(it.getColorHex());
+            } catch (Exception ignored) {
+            }
+            try {
+                c.setShadingPercent(it.getShadingPercent());
+            } catch (Exception ignored) {
+            }
+            try {
+                c.setMaterial(it.getMaterial());
+            } catch (Exception ignored) {
+            }
+            try {
+                c.setLighting(it.getLighting());
+            } catch (Exception ignored) {
+            }
 
             out.add(c);
         }
@@ -185,10 +222,12 @@ public class Planner2DPage extends JPanel {
     }
 
     private void pushUndoSnapshot() {
-        if (restoringHistory) return;
+        if (restoringHistory)
+            return;
 
         undoStack.push(deepCopyItems(canvas.getItems()));
-        while (undoStack.size() > MAX_HISTORY) undoStack.removeLast();
+        while (undoStack.size() > MAX_HISTORY)
+            undoStack.removeLast();
 
         // new change invalidates redo
         redoStack.clear();
@@ -207,7 +246,8 @@ public class Planner2DPage extends JPanel {
     }
 
     private void doUndo() {
-        if (undoStack.size() <= 1) return; // keep at least one base state
+        if (undoStack.size() <= 1)
+            return; // keep at least one base state
 
         // current goes to redo
         redoStack.push(deepCopyItems(canvas.getItems()));
@@ -215,16 +255,19 @@ public class Planner2DPage extends JPanel {
         // pop current, restore previous
         undoStack.pop();
         java.util.List<FurnitureItem> prev = undoStack.peek();
-        if (prev != null) restoreSnapshot(prev);
+        if (prev != null)
+            restoreSnapshot(prev);
 
         markDirtyAndAutosave();
     }
 
     private void doRedo() {
-        if (redoStack.isEmpty()) return;
+        if (redoStack.isEmpty())
+            return;
 
         java.util.List<FurnitureItem> next = redoStack.pop();
-        if (next == null) return;
+        if (next == null)
+            return;
 
         // current -> undo, then restore next
         undoStack.push(deepCopyItems(next));
@@ -233,7 +276,9 @@ public class Planner2DPage extends JPanel {
         markDirtyAndAutosave();
     }
 
-    /* ========================= LEFT: Furniture Library ========================= */
+    /*
+     * ========================= LEFT: Furniture Library =========================
+     */
 
     private JPanel buildFurnitureLibrary() {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, Color.WHITE);
@@ -281,11 +326,14 @@ public class Planner2DPage extends JPanel {
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
         list.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
+            @Override
+            public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
                     FurnitureTemplate t = list.getSelectedValue();
                     if (t != null) {
+
                         pushUndoSnapshot();
+
                         canvas.addItemFromTemplate(t);
                         markDirtyAndAutosave();
                         canvas.requestFocusInWindow();
@@ -338,7 +386,7 @@ public class Planner2DPage extends JPanel {
 
         @Override
         public Component getListCellRendererComponent(JList<? extends FurnitureTemplate> list, FurnitureTemplate value,
-                                                      int index, boolean isSelected, boolean cellHasFocus) {
+                int index, boolean isSelected, boolean cellHasFocus) {
             name.setText(value.name);
             size.setText(value.displaySize);
             icon.setText(value.kind.iconText);
@@ -347,8 +395,7 @@ public class Planner2DPage extends JPanel {
                 setBackground(new Color(0xEEF2FF));
                 setBorder(BorderFactory.createCompoundBorder(
                         new LineBorder(new Color(0xC7D2FE), 1, true),
-                        new EmptyBorder(10, 10, 10, 10)
-                ));
+                        new EmptyBorder(10, 10, 10, 10)));
             } else {
                 setBackground(Color.WHITE);
                 setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -357,7 +404,10 @@ public class Planner2DPage extends JPanel {
         }
     }
 
-    /* ========================= CENTER: Page header controls ========================= */
+    /*
+     * ========================= CENTER: Page header controls
+     * =========================
+     */
 
     private JPanel buildPageHeader() {
         UiKit.RoundedPanel header = new UiKit.RoundedPanel(18, Color.WHITE);
@@ -389,6 +439,7 @@ public class Planner2DPage extends JPanel {
 
         JButton undo = UiKit.iconButton("↶");
         JButton redo = UiKit.iconButton("↷");
+
         undo.addActionListener(e -> doUndo());
         redo.addActionListener(e -> doRedo());
 
@@ -416,7 +467,8 @@ public class Planner2DPage extends JPanel {
             saveDesign("Saved before 3D");
             styleMiniToggle(toggle2d, false);
             styleMiniToggle(toggle3d, true);
-            if (router != null) router.show(ScreenKeys.VIEW_3D);
+            if (router != null)
+                router.show(ScreenKeys.VIEW_3D);
         });
 
         JButton export = UiKit.ghostButton("Export");
@@ -424,8 +476,7 @@ public class Planner2DPage extends JPanel {
                 this,
                 "Export is a future enhancement.\n(You already have the UI hook here.)",
                 "Export",
-                JOptionPane.INFORMATION_MESSAGE
-        ));
+                JOptionPane.INFORMATION_MESSAGE));
 
         right.add(undo);
         right.add(redo);
@@ -449,15 +500,13 @@ public class Planner2DPage extends JPanel {
             b.setForeground(new Color(0x4338CA));
             b.setBorder(BorderFactory.createCompoundBorder(
                     new LineBorder(new Color(0xC7D2FE), 1, true),
-                    new EmptyBorder(8, 12, 8, 12)
-            ));
+                    new EmptyBorder(8, 12, 8, 12)));
         } else {
             b.setBackground(Color.WHITE);
             b.setForeground(new Color(0x374151));
             b.setBorder(BorderFactory.createCompoundBorder(
                     new LineBorder(UiKit.BORDER, 1, true),
-                    new EmptyBorder(8, 12, 8, 12)
-            ));
+                    new EmptyBorder(8, 12, 8, 12)));
         }
     }
 
@@ -509,7 +558,8 @@ public class Planner2DPage extends JPanel {
 
         shadingToolsBtn.setBorder(new EmptyBorder(10, 12, 10, 12));
         shadingToolsBtn.addActionListener(e -> {
-            if (router != null) router.show(ScreenKeys.SHADING_COLOR);
+            if (router != null)
+                router.show(ScreenKeys.SHADING_COLOR);
         });
         content.add(shadingToolsBtn);
 
@@ -524,8 +574,7 @@ public class Planner2DPage extends JPanel {
         deleteBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         deleteBtn.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(UiKit.BORDER, 1, true),
-                new EmptyBorder(10, 12, 10, 12)
-        ));
+                new EmptyBorder(10, 12, 10, 12)));
         content.add(deleteBtn);
 
         JScrollPane sc = new JScrollPane(content);
@@ -564,8 +613,7 @@ public class Planner2DPage extends JPanel {
 
         field.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(UiKit.BORDER, 1, true),
-                new EmptyBorder(8, 10, 8, 10)
-        ));
+                new EmptyBorder(8, 10, 8, 10)));
 
         p.add(l);
         p.add(Box.createVerticalStrut(6));
@@ -581,8 +629,7 @@ public class Planner2DPage extends JPanel {
 
         rotField.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(UiKit.BORDER, 1, true),
-                new EmptyBorder(8, 10, 8, 10)
-        ));
+                new EmptyBorder(8, 10, 8, 10)));
         rotField.setPreferredSize(new Dimension(64, 34));
 
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -592,14 +639,25 @@ public class Planner2DPage extends JPanel {
         JButton right90 = UiKit.ghostButton("↻ 90°");
 
         left90.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
+            if (canvas.getSelected() == null)
+                return;
             pushUndoSnapshot();
             canvas.nudgeRotation(-90);
             markDirtyAndAutosave();
         });
         right90.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
+            if (canvas.getSelected() == null)
+                return;
             pushUndoSnapshot();
+            canvas.nudgeRotation(90);
+            markDirtyAndAutosave();
+        });
+
+        left90.addActionListener(e -> {
+            canvas.nudgeRotation(-90);
+            markDirtyAndAutosave();
+        });
+        right90.addActionListener(e -> {
             canvas.nudgeRotation(90);
             markDirtyAndAutosave();
         });
@@ -655,26 +713,47 @@ public class Planner2DPage extends JPanel {
         JButton toBack = UiKit.ghostButton("To Back");
 
         forward.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
+            if (canvas.getSelected() == null)
+                return;
             pushUndoSnapshot();
             canvas.layerForward();
             markDirtyAndAutosave();
         });
         backward.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
+            if (canvas.getSelected() == null)
+                return;
             pushUndoSnapshot();
             canvas.layerBackward();
             markDirtyAndAutosave();
         });
         toFront.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
+            if (canvas.getSelected() == null)
+                return;
             pushUndoSnapshot();
             canvas.layerToFront();
             markDirtyAndAutosave();
         });
         toBack.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
+            if (canvas.getSelected() == null)
+                return;
             pushUndoSnapshot();
+            canvas.layerToBack();
+            markDirtyAndAutosave();
+        });
+
+        forward.addActionListener(e -> {
+            canvas.layerForward();
+            markDirtyAndAutosave();
+        });
+        backward.addActionListener(e -> {
+            canvas.layerBackward();
+            markDirtyAndAutosave();
+        });
+        toFront.addActionListener(e -> {
+            canvas.layerToFront();
+            markDirtyAndAutosave();
+        });
+        toBack.addActionListener(e -> {
             canvas.layerToBack();
             markDirtyAndAutosave();
         });
@@ -688,6 +767,7 @@ public class Planner2DPage extends JPanel {
     }
 
     private void wireRightPanel() {
+
         installApplyOnEnterOrBlur(xField, () -> {
             if (canvas.getSelected() == null) return;
             pushUndoSnapshot();
@@ -727,12 +807,22 @@ public class Planner2DPage extends JPanel {
                 rotationDragging = false;
             }
 
+
+        installApplyOnEnterOrBlur(xField, () -> { applyPositionFromFields(); markDirtyAndAutosave(); });
+        installApplyOnEnterOrBlur(yField, () -> { applyPositionFromFields(); markDirtyAndAutosave(); });
+        installApplyOnEnterOrBlur(wField, () -> { applyScaleFromFields(); markDirtyAndAutosave(); });
+        installApplyOnEnterOrBlur(hField, () -> { applyScaleFromFields(); markDirtyAndAutosave(); });
+
+        rotationSlider.addChangeListener(e -> {
+            if (programmaticUpdate) return;
+
             canvas.setSelectedRotation(rotationSlider.getValue());
             rotField.setText(String.valueOf(rotationSlider.getValue()));
             markDirtyAndAutosave();
         });
 
         installApplyOnEnterOrBlur(rotField, () -> {
+
             if (canvas.getSelected() == null) return;
             try {
                 int v = Integer.parseInt(rotField.getText().trim());
@@ -745,12 +835,20 @@ public class Planner2DPage extends JPanel {
                 rotationSlider.setValue(v);
                 programmaticUpdate = false;
 
+
+            try {
+                int v = Integer.parseInt(rotField.getText().trim());
+                v = Math.max(0, Math.min(360, v));
+                canvas.setSelectedRotation(v);
+                rotationSlider.setValue(v);
+
                 markDirtyAndAutosave();
             } catch (Exception ignored) {}
         });
 
         shadingSlider.addChangeListener(e -> {
             if (programmaticUpdate) return;
+
             if (canvas.getSelected() == null) return;
 
             // batch slider drag into ONE undo step
@@ -763,19 +861,24 @@ public class Planner2DPage extends JPanel {
                 shadingDragging = false;
             }
 
+
             canvas.setSelectedShading(shadingSlider.getValue());
             markDirtyAndAutosave();
         });
 
         deleteBtn.addActionListener(e -> {
+
             if (canvas.getSelected() == null) return;
             pushUndoSnapshot();
+
             canvas.deleteSelected();
             updatePropertiesFromSelection();
             markDirtyAndAutosave();
         });
 
+
         // Canvas selection + drag edit hooks
+
         canvas.setOnSelectionChanged(() -> {
             updatePropertiesFromSelection();
             FurnitureItem sel = canvas.getSelected();
@@ -793,22 +896,27 @@ public class Planner2DPage extends JPanel {
             updatePropertiesFromSelection();
             markDirtyAndAutosave();
         });
+
     }
 
     private void applyPositionFromFields() {
-        if (programmaticUpdate) return;
+        if (programmaticUpdate)
+            return;
         try {
             int x = Integer.parseInt(xField.getText().trim());
             int y = Integer.parseInt(yField.getText().trim());
             canvas.setSelectedPosition(x, y);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private void applyScaleFromFields() {
-        if (programmaticUpdate) return;
+        if (programmaticUpdate)
+            return;
 
         FurnitureItem sel = canvas.getSelected();
-        if (sel == null) return;
+        if (sel == null)
+            return;
 
         try {
             int w = Integer.parseInt(wField.getText().trim());
@@ -827,7 +935,8 @@ public class Planner2DPage extends JPanel {
             }
 
             canvas.setSelectedSize(w, h);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private void updatePropertiesFromSelection() {
@@ -844,7 +953,11 @@ public class Planner2DPage extends JPanel {
                 hField.setText("0");
                 shadingSlider.setValue(50);
                 deleteBtn.setEnabled(false);
+
                 shadingToolsBtn.setEnabled(true);
+
+                shadingToolsBtn.setEnabled(true); // still can open global tools
+
                 setRightPanelEnabled(false);
                 return;
             }
@@ -881,7 +994,10 @@ public class Planner2DPage extends JPanel {
     private void installApplyOnEnterOrBlur(JTextField tf, Runnable apply) {
         tf.addActionListener(e -> apply.run());
         tf.addFocusListener(new FocusAdapter() {
-            @Override public void focusLost(FocusEvent e) { apply.run(); }
+            @Override
+            public void focusLost(FocusEvent e) {
+                apply.run();
+            }
         });
     }
 
@@ -893,7 +1009,10 @@ public class Planner2DPage extends JPanel {
         TABLE_ROUND("●");
 
         final String iconText;
-        FurnitureKind(String iconText) { this.iconText = iconText; }
+
+        FurnitureKind(String iconText) {
+            this.iconText = iconText;
+        }
     }
 
     private static class FurnitureTemplate {
@@ -911,7 +1030,10 @@ public class Planner2DPage extends JPanel {
             this.defaultH = defaultH;
         }
 
-        @Override public String toString() { return name; }
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 
     /* ========================= Canvas ========================= */
@@ -946,9 +1068,13 @@ public class Planner2DPage extends JPanel {
                     FurnitureItem hit = hitTest(e.getPoint());
                     setSelected(hit);
 
+
                     if (hit != null) {
                         // snapshot once when user starts dragging
                         if (onEditStart != null) onEditStart.run();
+
+
+                    if (hit != null) {
 
                         dragStartMouse = e.getPoint();
                         dragStartItem = new Point(hit.getX(), hit.getY());
@@ -970,10 +1096,12 @@ public class Planner2DPage extends JPanel {
                 }
 
                 @Override public void mouseReleased(MouseEvent e) {
+
                     if (selected != null && dragStartItem != null) {
                         boolean moved = selected.getX() != dragStartItem.x || selected.getY() != dragStartItem.y;
                         if (moved && onEditCommit != null) onEditCommit.run();
                     }
+
                     dragStartMouse = null;
                     dragStartItem = null;
                 }
@@ -985,27 +1113,49 @@ public class Planner2DPage extends JPanel {
             getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "deleteSelected");
             getActionMap().put("deleteSelected", new AbstractAction() {
                 @Override public void actionPerformed(ActionEvent e) {
+
                     if (onDeleteRequested != null) onDeleteRequested.run();
                     else deleteSelected();
+
+                    deleteSelected();
+
                 }
             });
         }
 
-        void setOnSelectionChanged(Runnable r) { this.onSelectionChanged = r; }
-        void setOnEditStart(Runnable r) { this.onEditStart = r; }
-        void setOnEditCommit(Runnable r) { this.onEditCommit = r; }
-        void setOnDeleteRequested(Runnable r) { this.onDeleteRequested = r; }
+        void setOnSelectionChanged(Runnable r) {
+            this.onSelectionChanged = r;
+        }
 
-        java.util.List<FurnitureItem> getItems() { return items; }
+        void setOnEditStart(Runnable r) {
+            this.onEditStart = r;
+        }
+
+        void setOnEditCommit(Runnable r) {
+            this.onEditCommit = r;
+        }
+
+        void setOnDeleteRequested(Runnable r) {
+            this.onDeleteRequested = r;
+        }
+
+        java.
+
+                util.List<FurnitureItem> getItems() {
+            return items;
+        }
 
         void setItems(java.util.List<FurnitureItem> items) {
             this.items = (items == null) ? new java.util.ArrayList<>() : items;
-            if (!this.items.contains(selected)) selected = null;
+            if (!this.items.contains(selected))
+                selected = null;
             repaint();
             fireSelectionChanged();
         }
 
-        FurnitureItem getSelected() { return selected; }
+        FurnitureItem getSelected() {
+            return selected;
+        }
 
         void addItemFromTemplate(FurnitureTemplate t) {
             int cx = Math.max(40, getWidth() / 2 - t.defaultW / 2);
@@ -1015,8 +1165,7 @@ public class Planner2DPage extends JPanel {
                     UUID.randomUUID().toString(),
                     t.name,
                     t.kind.name(),
-                    cx, cy, t.defaultW, t.defaultH
-            );
+                    cx, cy, t.defaultW, t.defaultH);
 
             items.add(it);
             setSelected(it);
@@ -1029,20 +1178,23 @@ public class Planner2DPage extends JPanel {
         }
 
         void fireSelectionChanged() {
-            if (onSelectionChanged != null) onSelectionChanged.run();
+            if (onSelectionChanged != null)
+                onSelectionChanged.run();
         }
 
         FurnitureItem hitTest(Point p) {
             for (int i = items.size() - 1; i >= 0; i--) {
                 FurnitureItem it = items.get(i);
                 Rectangle r = new Rectangle(it.getX(), it.getY(), it.getW(), it.getH());
-                if (r.contains(p)) return it;
+                if (r.contains(p))
+                    return it;
             }
             return null;
         }
 
         void setSelectedPosition(int x, int y) {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             selected.setX(x);
             selected.setY(y);
             repaint();
@@ -1050,7 +1202,8 @@ public class Planner2DPage extends JPanel {
         }
 
         void setSelectedSize(int w, int h) {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             selected.setW(w);
             selected.setH(h);
             repaint();
@@ -1058,7 +1211,8 @@ public class Planner2DPage extends JPanel {
         }
 
         void setSelectedRotation(int deg) {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             int v = ((deg % 360) + 360) % 360;
             selected.setRotation(v);
             repaint();
@@ -1066,19 +1220,22 @@ public class Planner2DPage extends JPanel {
         }
 
         void nudgeRotation(int delta) {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             setSelectedRotation(selected.getRotation() + delta);
         }
 
         void setSelectedShading(int v) {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             selected.setShadingPercent(Math.max(0, Math.min(100, v)));
             repaint();
             fireSelectionChanged();
         }
 
         void deleteSelected() {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             items.remove(selected);
             selected = null;
             repaint();
@@ -1086,32 +1243,38 @@ public class Planner2DPage extends JPanel {
         }
 
         void layerForward() {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             int idx = items.indexOf(selected);
-            if (idx < 0 || idx == items.size() - 1) return;
+            if (idx < 0 || idx == items.size() - 1)
+                return;
             items.remove(idx);
             items.add(idx + 1, selected);
             repaint();
         }
 
         void layerBackward() {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             int idx = items.indexOf(selected);
-            if (idx <= 0) return;
+            if (idx <= 0)
+                return;
             items.remove(idx);
             items.add(idx - 1, selected);
             repaint();
         }
 
         void layerToFront() {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             items.remove(selected);
             items.add(selected);
             repaint();
         }
 
         void layerToBack() {
-            if (selected == null) return;
+            if (selected == null)
+                return;
             items.remove(selected);
             items.add(0, selected);
             repaint();
@@ -1154,8 +1317,10 @@ public class Planner2DPage extends JPanel {
         private void paintGrid(Graphics2D g2, int w, int h) {
             g2.setColor(new Color(0xEEF2F7));
             int step = 24;
-            for (int x = 0; x < w; x += step) g2.drawLine(x, 0, x, h);
-            for (int y = 0; y < h; y += step) g2.drawLine(0, y, w, y);
+            for (int x = 0; x < w; x += step)
+                g2.drawLine(x, 0, x, h);
+            for (int y = 0; y < h; y += step)
+                g2.drawLine(0, y, w, y);
         }
 
         private void paintRulers(Graphics2D g2, int w, int h) {
@@ -1194,12 +1359,16 @@ public class Planner2DPage extends JPanel {
             String kind = it.getKind() == null ? "CHAIR" : it.getKind();
             boolean round = "TABLE_ROUND".equals(kind);
 
-            if (round) g2.fillOval(r.x, r.y, r.width, r.height);
-            else g2.fillRoundRect(r.x, r.y, r.width, r.height, 14, 14);
+            if (round)
+                g2.fillOval(r.x, r.y, r.width, r.height);
+            else
+                g2.fillRoundRect(r.x, r.y, r.width, r.height, 14, 14);
 
             g2.setColor(new Color(0, 0, 0, 40));
-            if (round) g2.drawOval(r.x, r.y, r.width, r.height);
-            else g2.drawRoundRect(r.x, r.y, r.width, r.height, 14, 14);
+            if (round)
+                g2.drawOval(r.x, r.y, r.width, r.height);
+            else
+                g2.drawRoundRect(r.x, r.y, r.width, r.height, 14, 14);
 
             g2.setColor(Color.WHITE);
             g2.setFont(g2.getFont().deriveFont(Font.BOLD, 12f));
@@ -1212,16 +1381,21 @@ public class Planner2DPage extends JPanel {
             if (isSel) {
                 g2.setColor(new Color(0x2563EB));
                 g2.setStroke(new BasicStroke(2.0f));
-                if (round) g2.drawOval(r.x - 2, r.y - 2, r.width + 4, r.height + 4);
-                else g2.drawRoundRect(r.x - 2, r.y - 2, r.width + 4, r.height + 4, 16, 16);
+                if (round)
+                    g2.drawOval(r.x - 2, r.y - 2, r.width + 4, r.height + 4);
+                else
+                    g2.drawRoundRect(r.x - 2, r.y - 2, r.width + 4, r.height + 4, 16, 16);
             }
         }
 
         private static Color parseHexOrDefault(String hex, Color fallback) {
-            if (hex == null) return fallback;
+            if (hex == null)
+                return fallback;
             String v = hex.trim();
-            if (v.startsWith("#")) v = v.substring(1);
-            if (v.length() != 6) return fallback;
+            if (v.startsWith("#"))
+                v = v.substring(1);
+            if (v.length() != 6)
+                return fallback;
             try {
                 int rgb = Integer.parseInt(v, 16);
                 return new Color(rgb);
