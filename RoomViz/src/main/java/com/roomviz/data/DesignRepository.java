@@ -53,6 +53,10 @@ public class DesignRepository {
         return list;
     }
 
+    public synchronized List<Design> listAll() {
+        return new ArrayList<>(byId.values());
+    }
+
     public synchronized Design getById(String id) {
         if (id == null) return null;
         return byId.get(id);
@@ -95,6 +99,31 @@ public class DesignRepository {
         byId.put(copy.getId(), copy);
         save();
         return copy;
+    }
+
+    /**
+     * Export all designs to a JSON file chosen by the user (Settings -> Export Data).
+     */
+    public synchronized void exportTo(File targetFile) {
+        if (targetFile == null) return;
+
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(targetFile), StandardCharsets.UTF_8)) {
+            List<Design> list = new ArrayList<>(byId.values());
+            GSON.toJson(list, LIST_TYPE, w);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    /**
+     * Clear all locally stored designs (Settings -> Delete Account).
+     */
+    public synchronized void clearAll() {
+        byId.clear();
+        if (storeFile.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            storeFile.delete();
+        }
     }
 
     /* ========================= persistence ========================= */

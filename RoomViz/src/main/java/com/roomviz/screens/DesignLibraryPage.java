@@ -10,11 +10,14 @@ import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.util.*;
 import java.util.List;
 import java.util.Locale;
 
@@ -26,6 +29,19 @@ public class DesignLibraryPage extends JPanel {
     // dynamic UI refs
     private JLabel showingLabel;
     private JPanel gridHost; // holds either empty state or grid panel
+
+    // ✅ NEW: filter/sort/view controls (wired)
+    private JTextField searchField;
+    private JComboBox<String> shapesBox;
+    private JComboBox<String> sizeBox;
+    private JComboBox<String> sortBox;
+    private JLabel clearFiltersLabel;
+
+    private JButton gridBtn;
+    private JButton listBtn;
+    private boolean gridMode = true;
+
+    private static final String SEARCH_PLACEHOLDER = "Search designs by name, customer, or tags...";
 
     // ✅ keep existing constructor (fallback)
     public DesignLibraryPage(AppFrame frame, Router router) {
@@ -47,14 +63,22 @@ public class DesignLibraryPage extends JPanel {
 
         content.add(headerRow());
         content.add(Box.createVerticalStrut(14));
-        content.add(searchFilterCard());
+        content.add(searchFilterCard(frame));
         content.add(Box.createVerticalStrut(16));
-        content.add(metaRow());
+        content.add(metaRow(frame));
         content.add(Box.createVerticalStrut(12));
 
         // dynamic designs grid
         gridHost = new JPanel(new BorderLayout());
         gridHost.setOpaque(false);
+        gridHost.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                // Refresh if we are in grid mode and width significantly changed
+                // (Debouncing would be better, but Swing is fast enough for this layout)
+                refreshGrid(frame);
+            }
+        });
         content.add(gridHost);
 
         content.add(Box.createVerticalStrut(18));
@@ -71,6 +95,25 @@ public class DesignLibraryPage extends JPanel {
         refreshGrid(frame);
     }
 
+    private boolean isHighContrast() {
+        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+    }
+
+    private Color softMuted() {
+        // neutral muted used in a few places (placeholder/meta)
+        return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
+    }
+
+    private Color hoverFill() {
+        // card hover background
+        return isHighContrast() ? UiKit.WHITE : new Color(0xFAFAFB);
+    }
+
+    private Color imagePlaceholderFill() {
+        // image block background
+        return isHighContrast() ? UiKit.WHITE : new Color(0xE5E7EB);
+    }
+
     private JComponent headerRow() {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
@@ -81,17 +124,17 @@ public class DesignLibraryPage extends JPanel {
 
         JLabel title = new JLabel("Design Library");
         title.setForeground(UiKit.TEXT);
-        title.setFont(UiKit.semibold(title.getFont(), 24f));
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.45f));
 
         JLabel sub = new JLabel("Manage and organize your saved room designs");
         sub.setForeground(UiKit.MUTED);
-        sub.setFont(UiKit.regular(sub.getFont(), 12.5f));
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
         sub.setBorder(new EmptyBorder(6, 0, 0, 0));
 
         left.add(title);
         left.add(sub);
 
-        JButton cta = UiKit.primaryButton("+   Create New Design");
+        JButton cta = UiKit.primaryGradientButton("+   Create New Design");
         cta.addActionListener(e -> this.router.show(ScreenKeys.NEW_DESIGN));
 
         row.add(left, BorderLayout.WEST);
@@ -99,7 +142,8 @@ public class DesignLibraryPage extends JPanel {
         return row;
     }
 
-    private JComponent searchFilterCard() {
+    // ✅ UPDATED: accept frame and wire listeners
+    private JComponent searchFilterCard(AppFrame frame) {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
         card.setBorderPaint(UiKit.BORDER);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
@@ -108,16 +152,29 @@ public class DesignLibraryPage extends JPanel {
         JPanel row1 = new JPanel(new BorderLayout(10, 0));
         row1.setOpaque(false);
 
-        JTextField search = UiKit.searchField("Search designs by name, customer, or tags...");
+        searchField = UiKit.searchField(SEARCH_PLACEHOLDER);
         JButton filters = UiKit.ghostButton("Filters");
+        filters.setFont(UiKit.scaled(filters, Font.PLAIN, 1.00f));
         filters.setPreferredSize(new Dimension(110, filters.getPreferredSize().height));
 
-        row1.add(search, BorderLayout.CENTER);
+        // ✅ live search
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { refreshGrid(frame); }
+            @Override public void removeUpdate(DocumentEvent e) { refreshGrid(frame); }
+            @Override public void changedUpdate(DocumentEvent e) { refreshGrid(frame); }
+        });
+
+        row1.add(searchField, BorderLayout.CENTER);
         row1.add(filters, BorderLayout.EAST);
 
         JPanel tags = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 10));
         tags.setOpaque(false);
-        tags.add(new JLabel("Tags:"));
+
+        JLabel tagsLbl = new JLabel("Tags:");
+        tagsLbl.setForeground(UiKit.MUTED);
+        tagsLbl.setFont(UiKit.scaled(tagsLbl, Font.PLAIN, 0.92f));
+
+        tags.add(tagsLbl);
         tags.add(UiKit.chipPrimary("Modern"));
         tags.add(UiKit.chip("Classic"));
         tags.add(UiKit.chip("Minimalist"));
@@ -129,22 +186,24 @@ public class DesignLibraryPage extends JPanel {
 
         JLabel roomShapeLbl = new JLabel("Room Shape:");
         roomShapeLbl.setForeground(UiKit.MUTED);
-        roomShapeLbl.setFont(roomShapeLbl.getFont().deriveFont(11.5f));
+        roomShapeLbl.setFont(UiKit.scaled(roomShapeLbl, Font.PLAIN, 0.90f));
 
-        JComboBox<String> shapes = new JComboBox<>(new String[]{"All Shapes", "Rectangular", "Square", "L-Shape"});
-        UiKit.styleDropdown(shapes);
+        shapesBox = new JComboBox<>(new String[]{"All Shapes", "Rectangular", "Square", "L-Shape"});
+        UiKit.styleDropdown(shapesBox);
+        shapesBox.addActionListener(e -> refreshGrid(frame));
 
         JLabel sizeLbl = new JLabel("Size:");
         sizeLbl.setForeground(UiKit.MUTED);
-        sizeLbl.setFont(sizeLbl.getFont().deriveFont(11.5f));
+        sizeLbl.setFont(UiKit.scaled(sizeLbl, Font.PLAIN, 0.90f));
 
-        JComboBox<String> size = new JComboBox<>(new String[]{"All Sizes", "Small", "Medium", "Large"});
-        UiKit.styleDropdown(size);
+        sizeBox = new JComboBox<>(new String[]{"All Sizes", "Small", "Medium", "Large"});
+        UiKit.styleDropdown(sizeBox);
+        sizeBox.addActionListener(e -> refreshGrid(frame));
 
         row3.add(roomShapeLbl);
-        row3.add(shapes);
+        row3.add(shapesBox);
         row3.add(sizeLbl);
-        row3.add(size);
+        row3.add(sizeBox);
 
         card.add(row1);
         card.add(tags);
@@ -153,44 +212,75 @@ public class DesignLibraryPage extends JPanel {
         return card;
     }
 
-    private JComponent metaRow() {
+    // ✅ UPDATED: accept frame and wire sort + view toggle + clear filters
+    private JComponent metaRow(AppFrame frame) {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
 
         showingLabel = new JLabel("Showing 0 designs    ");
         showingLabel.setForeground(UiKit.MUTED);
-        showingLabel.setFont(showingLabel.getFont().deriveFont(11.8f));
+        showingLabel.setFont(UiKit.scaled(showingLabel, Font.PLAIN, 0.90f));
 
-        JLabel clear = new JLabel("Clear all filters");
-        clear.setForeground(UiKit.PRIMARY);
-        clear.setFont(clear.getFont().deriveFont(Font.PLAIN, 11.8f));
+        clearFiltersLabel = new JLabel("Clear all filters");
+        clearFiltersLabel.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.PRIMARY);
+        clearFiltersLabel.setFont(UiKit.scaled(clearFiltersLabel, Font.PLAIN, 0.90f));
+        clearFiltersLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        clearFiltersLabel.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                resetFilters();
+                refreshGrid(frame);
+            }
+        });
 
         JPanel leftWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         leftWrap.setOpaque(false);
         leftWrap.add(showingLabel);
-        leftWrap.add(clear);
+        leftWrap.add(clearFiltersLabel);
 
         JPanel rightWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         rightWrap.setOpaque(false);
 
         JLabel sortLbl = new JLabel("Sort by:");
         sortLbl.setForeground(UiKit.MUTED);
-        sortLbl.setFont(sortLbl.getFont().deriveFont(11.8f));
+        sortLbl.setFont(UiKit.scaled(sortLbl, Font.PLAIN, 0.90f));
 
-        JComboBox<String> sort = new JComboBox<>(new String[]{"Most Recent", "Oldest", "Name A-Z"});
-        UiKit.styleDropdown(sort);
+        sortBox = new JComboBox<>(new String[]{"Most Recent", "Oldest", "Name A-Z"});
+        UiKit.styleDropdown(sortBox);
+        sortBox.addActionListener(e -> refreshGrid(frame));
 
-        JButton grid = UiKit.iconButton("▦");
-        JButton list = UiKit.iconButton("≡");
+        gridBtn = UiKit.iconButton("▦");
+        listBtn = UiKit.iconButton("≡");
+
+        // ✅ view toggle wiring
+        gridBtn.setToolTipText("Grid view");
+        listBtn.setToolTipText("List view");
+
+        gridBtn.addActionListener(e -> {
+            gridMode = true;
+            refreshGrid(frame);
+        });
+
+        listBtn.addActionListener(e -> {
+            gridMode = false;
+            refreshGrid(frame);
+        });
 
         rightWrap.add(sortLbl);
-        rightWrap.add(sort);
-        rightWrap.add(grid);
-        rightWrap.add(list);
+        rightWrap.add(sortBox);
+        rightWrap.add(gridBtn);
+        rightWrap.add(listBtn);
 
         row.add(leftWrap, BorderLayout.WEST);
         row.add(rightWrap, BorderLayout.EAST);
         return row;
+    }
+
+    private void resetFilters() {
+        if (searchField != null) searchField.setText("");
+        if (shapesBox != null) shapesBox.setSelectedIndex(0);
+        if (sizeBox != null) sizeBox.setSelectedIndex(0);
+        if (sortBox != null) sortBox.setSelectedIndex(0);
+        gridMode = true;
     }
 
     /* ========================= Dynamic grid ========================= */
@@ -208,17 +298,146 @@ public class DesignLibraryPage extends JPanel {
         }
 
         List<Design> designs = appState.getRepo().getAllSortedByLastUpdatedDesc();
-        if (showingLabel != null) showingLabel.setText("Showing " + designs.size() + " designs    ");
+        List<Design> filtered = applyFilters(designs);
+        filtered = applySort(filtered);
 
-        if (designs.isEmpty()) {
-            gridHost.add(emptyState("No saved designs yet",
-                    "Click “Create New Design” to start your first project."), BorderLayout.CENTER);
+        if (showingLabel != null) showingLabel.setText("Showing " + filtered.size() + " designs    ");
+
+        if (filtered.isEmpty()) {
+            gridHost.add(emptyState("No matching designs",
+                    "Try clearing filters or searching with a different keyword."), BorderLayout.CENTER);
         } else {
-            gridHost.add(grid(frame, designs), BorderLayout.CENTER);
+            gridHost.add(gridMode ? grid(frame, filtered) : list(frame, filtered), BorderLayout.CENTER);
         }
 
         revalidate();
         repaint();
+    }
+
+    private List<Design> applyFilters(List<Design> designs) {
+        String q = (searchField == null) ? "" : searchField.getText();
+        if (SEARCH_PLACEHOLDER.equals(q)) {
+            q = "";
+        }
+        q = safe(q, "").toLowerCase(Locale.ENGLISH);
+        
+        String shapeFilter = (shapesBox == null) ? "All Shapes" : (String) shapesBox.getSelectedItem();
+        String sizeFilter = (sizeBox == null) ? "All Sizes" : (String) sizeBox.getSelectedItem();
+
+        List<Design> out = new ArrayList<>();
+        if (designs == null) return out;
+
+        for (Design d : designs) {
+            if (d == null) continue;
+
+            // search (name + customer + tags if present)
+            if (!q.isEmpty()) {
+                String hay = buildSearchHaystack(d);
+                if (!hay.contains(q)) continue;
+            }
+
+            RoomSpec spec = d.getRoomSpec();
+
+            // shape
+            if (shapeFilter != null && !"All Shapes".equalsIgnoreCase(shapeFilter)) {
+                if (!matchesShape(spec, shapeFilter)) continue;
+            }
+
+            // size
+            if (sizeFilter != null && !"All Sizes".equalsIgnoreCase(sizeFilter)) {
+                if (!matchesSize(spec, sizeFilter)) continue;
+            }
+
+            out.add(d);
+        }
+        return out;
+    }
+
+    private List<Design> applySort(List<Design> designs) {
+        String sort = (sortBox == null) ? "Most Recent" : (String) sortBox.getSelectedItem();
+        if (sort == null) sort = "Most Recent";
+
+        List<Design> out = new ArrayList<>(designs);
+
+        switch (sort) {
+            case "Oldest":
+                out.sort(Comparator.comparingLong(Design::getLastUpdatedEpochMs));
+                break;
+            case "Name A-Z":
+                out.sort((a, b) -> safe(a.getDesignName(), "Untitled").compareToIgnoreCase(safe(b.getDesignName(), "Untitled")));
+                break;
+            case "Most Recent":
+            default:
+                out.sort((a, b) -> Long.compare(b.getLastUpdatedEpochMs(), a.getLastUpdatedEpochMs()));
+                break;
+        }
+
+        return out;
+    }
+
+    private String buildSearchHaystack(Design d) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(safe(d.getDesignName(), "")).append(" ");
+        sb.append(safe(d.getCustomerName(), "")).append(" ");
+
+        // tags are optional (avoid compile risk by using reflection)
+        Object tags = invoke(d, "getTags");
+        if (tags instanceof Collection) {
+            for (Object t : (Collection<?>) tags) {
+                if (t != null) sb.append(t.toString()).append(" ");
+            }
+        } else if (tags != null) {
+            sb.append(tags.toString()).append(" ");
+        }
+
+        return sb.toString().toLowerCase(Locale.ENGLISH);
+    }
+
+    private boolean matchesShape(RoomSpec spec, String shapeFilter) {
+        if (spec == null) return false;
+
+        // Try common getters via reflection to avoid breaking compilation
+        Object shape = invoke(spec, "getShape");
+        if (shape == null) shape = invoke(spec, "getRoomShape");
+        if (shape == null) shape = invoke(spec, "shape");
+        String s = (shape == null) ? "" : shape.toString();
+
+        s = s.toLowerCase(Locale.ENGLISH);
+        String f = shapeFilter.toLowerCase(Locale.ENGLISH);
+
+        if (f.contains("rect")) return s.contains("rect");
+        if (f.contains("square")) return s.contains("square");
+        if (f.contains("l-shape") || f.contains("lshape") || f.equals("l-shape")) return s.contains("l");
+        return false;
+    }
+
+    private boolean matchesSize(RoomSpec spec, String sizeFilter) {
+        if (spec == null) return false;
+
+        // First: try numeric width/length (meters) by reflection
+        Double w = firstDouble(spec, "getWidthM", "getWidth", "getWidthMeters", "widthM", "width");
+        Double l = firstDouble(spec, "getLengthM", "getLength", "getLengthMeters", "lengthM", "length");
+
+        if (w != null && l != null) {
+            double area = Math.max(0.0, w) * Math.max(0.0, l);
+
+            // Small: < 12, Medium: 12–24.99, Large: >= 25
+            switch (sizeFilter) {
+                case "Small": return area < 12.0;
+                case "Medium": return area >= 12.0 && area < 25.0;
+                case "Large": return area >= 25.0;
+            }
+        }
+
+        // Fallback: rely on RoomSpec.toSizeLabel() if it includes hints
+        String label = safe(spec.toSizeLabel(), "").toLowerCase(Locale.ENGLISH);
+
+        if (sizeFilter.equalsIgnoreCase("Small")) return label.contains("small");
+        if (sizeFilter.equalsIgnoreCase("Medium")) return label.contains("medium");
+        if (sizeFilter.equalsIgnoreCase("Large")) return label.contains("large");
+
+        // If label doesn't include those words, don't filter out incorrectly
+        return true;
     }
 
     private JComponent emptyState(String title, String subtitle) {
@@ -229,11 +448,11 @@ public class DesignLibraryPage extends JPanel {
 
         JLabel t = new JLabel(title);
         t.setForeground(UiKit.TEXT);
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 14.5f));
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.10f));
 
         JLabel s = new JLabel(subtitle);
         s.setForeground(UiKit.MUTED);
-        s.setFont(s.getFont().deriveFont(Font.PLAIN, 12.2f));
+        s.setFont(UiKit.scaled(s, Font.PLAIN, 0.98f));
         s.setBorder(new EmptyBorder(8, 0, 0, 0));
 
         card.add(t);
@@ -242,7 +461,9 @@ public class DesignLibraryPage extends JPanel {
     }
 
     private JComponent grid(AppFrame frame, List<Design> designs) {
-        JPanel grid = new JPanel(new GridLayout(0, 4, 14, 14));
+        int w = gridHost.getWidth();
+        int cols = Math.max(1, Math.min(4, w / 260)); // ~260px per card min
+        JPanel grid = new JPanel(new GridLayout(0, cols, 14, 14));
         grid.setOpaque(false);
 
         for (Design d : designs) {
@@ -258,17 +479,37 @@ public class DesignLibraryPage extends JPanel {
         return grid;
     }
 
+    // ✅ NEW: list view (same cards, 1 per row)
+    private JComponent list(AppFrame frame, List<Design> designs) {
+        JPanel list = new JPanel(new GridLayout(0, 1, 14, 14));
+        list.setOpaque(false);
+
+        for (Design d : designs) {
+            String title = safe(d.getDesignName(), "Untitled Design");
+            String client = safe(d.getCustomerName(), "Unknown Client");
+
+            RoomSpec spec = d.getRoomSpec();
+            String size = (spec == null) ? "-" : spec.toSizeLabel();
+
+            String timeAgo = timeAgoLabel(d.getLastUpdatedEpochMs());
+            list.add(designCard(frame, d, title, client, size, timeAgo));
+        }
+        return list;
+    }
+
     private JComponent designCard(AppFrame frame, Design design, String title, String client, String size, String timeAgo) {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
         card.setBorderPaint(UiKit.BORDER);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        UiKit.RoundedPanel img = new UiKit.RoundedPanel(14, new Color(0xE5E7EB));
+        UiKit.RoundedPanel img = new UiKit.RoundedPanel(14, imagePlaceholderFill());
+        img.setBorderPaint(isHighContrast() ? UiKit.BORDER : null);
         img.setPreferredSize(new Dimension(0, 130));
         img.setLayout(new GridBagLayout());
         JLabel imgLbl = new JLabel("Image");
-        imgLbl.setForeground(new Color(0x9CA3AF));
+        imgLbl.setForeground(softMuted());
+        imgLbl.setFont(UiKit.scaled(imgLbl, Font.PLAIN, 0.92f));
         img.add(imgLbl);
 
         JPanel info = new JPanel();
@@ -278,16 +519,16 @@ public class DesignLibraryPage extends JPanel {
 
         JLabel t = new JLabel(title);
         t.setForeground(UiKit.TEXT);
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 12.8f));
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.00f));
 
         JLabel sub = new JLabel(client);
         sub.setForeground(UiKit.MUTED);
-        sub.setFont(sub.getFont().deriveFont(11.5f));
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.92f));
         sub.setBorder(new EmptyBorder(4, 0, 0, 0));
 
         JLabel meta = new JLabel(size + "   •   " + timeAgo);
-        meta.setForeground(new Color(0x9CA3AF));
-        meta.setFont(meta.getFont().deriveFont(11.2f));
+        meta.setForeground(softMuted());
+        meta.setFont(UiKit.scaled(meta, Font.PLAIN, 0.90f));
         meta.setBorder(new EmptyBorder(6, 0, 0, 0));
 
         info.add(t);
@@ -300,7 +541,7 @@ public class DesignLibraryPage extends JPanel {
 
         JButton open = UiKit.primaryButton("Open");
         open.setBorder(new EmptyBorder(8, 12, 8, 12));
-        open.setFont(open.getFont().deriveFont(Font.BOLD, 11.8f));
+        open.setFont(UiKit.scaled(open, Font.BOLD, 0.95f));
         open.addActionListener(e -> openDesign(design));
 
         JPanel iconRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
@@ -359,7 +600,7 @@ public class DesignLibraryPage extends JPanel {
 
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) {
-                card.setFill(new Color(0xFAFAFB));
+                card.setFill(hoverFill());
                 card.repaint();
             }
             @Override public void mouseExited(MouseEvent e) {
@@ -411,10 +652,36 @@ public class DesignLibraryPage extends JPanel {
     private JComponent linkChip(String text) {
         JLabel l = new JLabel(text);
         l.setOpaque(true);
-        l.setBackground(new Color(0xEEF2FF));
-        l.setForeground(UiKit.PRIMARY_DARK);
-        l.setFont(l.getFont().deriveFont(Font.BOLD, 11.5f));
+        l.setBackground(isHighContrast() ? UiKit.WHITE : new Color(0xEEF2FF));
+        l.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.PRIMARY_DARK);
+        l.setFont(UiKit.scaled(l, Font.BOLD, 0.92f));
         l.setBorder(new EmptyBorder(6, 10, 6, 10));
         return l;
+    }
+
+    // -------- reflection helpers (safe + compile-proof) --------
+
+    private static Object invoke(Object target, String methodName) {
+        if (target == null || methodName == null) return null;
+        try {
+            Method m = target.getClass().getMethod(methodName);
+            m.setAccessible(true);
+            return m.invoke(target);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static Double firstDouble(Object target, String... methodNames) {
+        if (target == null || methodNames == null) return null;
+        for (String name : methodNames) {
+            try {
+                Method m = target.getClass().getMethod(name);
+                m.setAccessible(true);
+                Object v = m.invoke(target);
+                if (v instanceof Number) return ((Number) v).doubleValue();
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 }

@@ -5,7 +5,7 @@ public class FurnitureItem {
     private String name;        // display name (e.g., Accent Chair)
     private String kind;        // CHAIR, TABLE_RECT, TABLE_ROUND (string for simple JSON)
 
-    // geometry in 2D canvas space
+    // geometry in room space (Unit: Inches)
     private int x;
     private int y;
     private int w;

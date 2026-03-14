@@ -1,6 +1,8 @@
 package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
+import com.roomviz.data.SettingsRepository;
+import com.roomviz.model.UserSettings;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -9,82 +11,136 @@ import java.awt.*;
 
 public class TopBar extends JPanel {
 
-    private final JLabel titleLabel;
+    private final AppFrame frame;
+    private final SettingsRepository settingsRepo;
 
-    public TopBar(AppFrame frame) {
+    private final JLabel title = new JLabel("Dashboard", SwingConstants.CENTER);
+
+    // user pill
+    private final JLabel nameLabel = new JLabel("User");
+    private final JLabel emailLabel = new JLabel("user@email.com");
+
+    public TopBar(AppFrame frame, SettingsRepository settingsRepo) {
+        this.frame = frame;
+        this.settingsRepo = settingsRepo;
+
         setLayout(new BorderLayout());
-        setBackground(Color.WHITE);
+        setOpaque(true);
+        setBackground(UiKit.WHITE);
         setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UiKit.BORDER));
-        setPreferredSize(new Dimension(0, 56));
 
-        // Left: page title (Figma-like)
-        titleLabel = new JLabel("Dashboard");
-        titleLabel.setForeground(UiKit.TEXT);
-        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 14.5f));
-        titleLabel.setBorder(new EmptyBorder(0, 16, 0, 0));
-        add(titleLabel, BorderLayout.WEST);
+        // left spacer (keeps title centered)
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 10));
+        left.setOpaque(false);
+        left.setBorder(new EmptyBorder(0, 10, 0, 10));
 
-        // Right: icons + user
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        // center title
+        title.setForeground(UiKit.TEXT);
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
+        title.setBorder(new EmptyBorder(12, 0, 12, 0));
+
+        // right: user pill + logout
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 8));
         right.setOpaque(false);
+        right.setBorder(new EmptyBorder(0, 10, 0, 12));
 
-        JButton bell = UiKit.iconButton("🔔");
-        bell.setToolTipText("Notifications");
+        JPanel userPill = buildUserPill();
+        JButton logoutBtn = buildLogoutBtn();
 
-        JButton gear = UiKit.iconButton("⚙");
-        gear.setToolTipText("Quick settings");
+        right.add(userPill);
+        right.add(logoutBtn);
 
-        // user block
-        JPanel user = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        user.setOpaque(false);
-
-        UiKit.RoundedPanel avatar = new UiKit.RoundedPanel(999, new Color(0xE5E7EB));
-        avatar.setPreferredSize(new Dimension(28, 28));
-        avatar.setLayout(new GridBagLayout());
-        JLabel a = new JLabel("S");
-        a.setForeground(new Color(0x374151));
-        a.setFont(a.getFont().deriveFont(Font.BOLD, 12f));
-        avatar.add(a);
-
-        JPanel nameRole = new JPanel();
-        nameRole.setOpaque(false);
-        nameRole.setLayout(new BoxLayout(nameRole, BoxLayout.Y_AXIS));
-
-        JLabel name = new JLabel("Sarah Mitchell");
-        name.setForeground(UiKit.TEXT);
-        name.setFont(name.getFont().deriveFont(Font.PLAIN, 12.4f));
-
-        JLabel role = new JLabel("Senior Designer");
-        role.setForeground(UiKit.MUTED);
-        role.setFont(role.getFont().deriveFont(Font.PLAIN, 11.0f));
-
-        nameRole.add(name);
-        nameRole.add(role);
-
-        JButton caret = UiKit.iconButton("▾");
-        caret.setToolTipText("Account menu");
-
-        JButton logout = new JButton("Logout");
-        logout.setForeground(UiKit.DANGER);
-        logout.setBackground(Color.WHITE);
-        logout.setFocusPainted(false);
-        logout.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        logout.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
-        logout.addActionListener(e -> frame.goToLogin());
-
-        user.add(avatar);
-        user.add(nameRole);
-        user.add(caret);
-
-        right.add(bell);
-        right.add(gear);
-        right.add(user);
-        right.add(logout);
-
+        add(left, BorderLayout.WEST);
+        add(title, BorderLayout.CENTER);
         add(right, BorderLayout.EAST);
+
+        refreshUserFromSettings();
     }
 
-    public void setTitle(String title) {
-        titleLabel.setText(title);
+    private JPanel buildUserPill() {
+        JPanel pill = new JPanel();
+        pill.setOpaque(true);
+        pill.setBackground(UiKit.WHITE);
+        pill.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UiKit.BORDER, 1, true),
+                new EmptyBorder(8, 10, 8, 10)
+        ));
+        pill.setLayout(new BoxLayout(pill, BoxLayout.X_AXIS));
+
+        // avatar circle (simple)
+        JLabel avatar = new JLabel("\u25CF");
+        avatar.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF));
+        avatar.setFont(UiKit.scaled(avatar, Font.BOLD, 1.10f));
+
+        JPanel textCol = new JPanel();
+        textCol.setOpaque(false);
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+
+        nameLabel.setForeground(UiKit.TEXT);
+        nameLabel.setFont(UiKit.scaled(nameLabel, Font.BOLD, 0.98f));
+
+        emailLabel.setForeground(UiKit.MUTED);
+        emailLabel.setFont(UiKit.scaled(emailLabel, Font.PLAIN, 0.88f));
+
+        textCol.add(nameLabel);
+        textCol.add(emailLabel);
+
+        pill.add(avatar);
+        pill.add(Box.createHorizontalStrut(10));
+        pill.add(textCol);
+
+        return pill;
+    }
+
+    private JButton buildLogoutBtn() {
+        JButton b = new JButton("Logout");
+        b.setFocusPainted(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFont(UiKit.scaled(b, Font.PLAIN, 0.98f));
+        b.setForeground(UiKit.DANGER);
+        b.setBackground(UiKit.WHITE);
+        b.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UiKit.BORDER, 1, true),
+                new EmptyBorder(9, 12, 9, 12)
+        ));
+        b.addActionListener(e -> frame.goToLogin());
+
+        // hover (HC-safe)
+        b.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseEntered(java.awt.event.MouseEvent e) {
+                b.setBackground(isHighContrast() ? UiKit.WHITE : new Color(0xFEF2F2)); // red-50
+            }
+            @Override public void mouseExited(java.awt.event.MouseEvent e) {
+                b.setBackground(UiKit.WHITE);
+            }
+        });
+
+        return b;
+    }
+
+    private boolean isHighContrast() {
+        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+    }
+
+    public void setTitle(String t) {
+        title.setText(t == null ? "" : t);
+    }
+
+    public void refreshUserFromSettings() {
+        UserSettings s = settingsRepo.get();
+        if (s == null) return;
+
+        // FIX: UserSettings uses getFullName(), not getDisplayName()
+        String nm = safe(s.getFullName(), "User");
+        String em = safe(s.getEmail(), "user@email.com");
+
+        nameLabel.setText(nm);
+        emailLabel.setText(em);
+    }
+
+    private String safe(String v, String fallback) {
+        if (v == null) return fallback;
+        String t = v.trim();
+        return t.isEmpty() ? fallback : t;
     }
 }

@@ -20,6 +20,20 @@ import java.util.List;
 
 /**
  * Shading & Color Tools page (Swing UI) – polished + real AppState integration.
+ *
+ * ✅ Updated:
+ * - Uses UiKit.scaled(...) for all fonts (works with Small/Medium/Large)
+ * - Uses UiKit colors (works with High Contrast)
+ * - Safe guards for null appState/repo/router
+ *
+ * ✅ NEW (Wiring Fix - Step 1):
+ * - NO MORE silent auto-create designs.
+ * - If no design is selected -> show a proper empty state:
+ *   "Select or create a design first" + buttons to go Library / New Design.
+ *
+ * ✅ CRITICAL FIX:
+ * - This screen instance is created ONCE in ShellScreen.
+ * - So we must REBUILD UI when navigating here, otherwise it gets stuck in empty state.
  */
 public class ShadingColorPage extends JPanel {
 
@@ -61,12 +75,16 @@ public class ShadingColorPage extends JPanel {
 
     private final PreviewPanel previewPanel = new PreviewPanel();
 
+    // ✅ Guards to avoid duplicate listeners when we rebuild UI
+    private boolean actionsWired = false;
+    private boolean hexDocWired = false;
+
     /** ✅ Backward compatible constructor (old calls still work) */
     public ShadingColorPage(AppFrame frame) {
         this(frame, null, null);
     }
 
-    /** ✅ NEW constructor to match ShellScreen: (frame, router, appState) */
+    /** ✅ Constructor to match ShellScreen: (frame, router, appState) */
     public ShadingColorPage(AppFrame frame, Router router, AppState appState) {
         this.router = router;
         this.appState = appState;
@@ -75,11 +93,151 @@ public class ShadingColorPage extends JPanel {
         setBackground(UiKit.BG);
         setBorder(new EmptyBorder(14, 14, 14, 14));
 
+        // ✅ Build based on current state now
+        rebuildUI();
+
+        // ✅ Refresh on navigation (CRITICAL)
+        try {
+            if (router != null) {
+                router.addListener(key -> {
+                    if (ScreenKeys.SHADING_COLOR.equals(key)) {
+                        rebuildUI();
+                    }
+                });
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    /** ✅ Rebuild screen depending on whether a design is selected */
+    private void rebuildUI() {
+        removeAll();
+
+        Design d = (appState == null) ? null : appState.getCurrentDesign();
+        if (d == null) {
+            add(buildNoDesignState(), BorderLayout.CENTER);
+            revalidate();
+            repaint();
+            return;
+        }
+
         add(buildCardShell(), BorderLayout.CENTER);
 
-        wireLiveHexValidation();
-        loadInitialFromDesign(); // ✅ NEW: prefill from selected item or first item
+        // Wire listeners only once (because rebuild happens multiple times)
+        wireActionsOnce();
+        wireLiveHexValidationOnce();
+
+        loadInitialFromDesign();
         syncUI();
+
+        revalidate();
+        repaint();
+    }
+
+    /* ========================= No Design Selected (Empty State) ========================= */
+
+    private JComponent buildNoDesignState() {
+        JPanel wrap = new JPanel(new GridBagLayout());
+        wrap.setOpaque(false);
+
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, UiKit.WHITE);
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
+        card.setPreferredSize(new Dimension(560, 240));
+
+        JLabel title = new JLabel("Select or create a design first");
+        title.setForeground(UiKit.TEXT);
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel sub = new JLabel("<html>Shading & Colour Tools apply to the <b>currently selected design</b>.<br/>Go to the Design Library to pick one, or create a new design.</html>");
+        sub.setForeground(UiKit.MUTED);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        btnRow.setOpaque(false);
+        btnRow.setBorder(new EmptyBorder(16, 0, 0, 0));
+        btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton goLibrary = UiKit.primaryButton("Go to Design Library");
+        goLibrary.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
+        });
+
+        JButton createNew = UiKit.ghostButton("Create New Design");
+        createNew.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.NEW_DESIGN);
+        });
+
+        JButton backPlanner = UiKit.ghostButton("Back to Planner");
+        backPlanner.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+        });
+
+        btnRow.add(goLibrary);
+        btnRow.add(createNew);
+        btnRow.add(backPlanner);
+
+        card.add(title);
+        card.add(sub);
+        card.add(btnRow);
+
+        wrap.add(card);
+        return wrap;
+    }
+
+    /* ========================= Wiring (ONLY ONCE) ========================= */
+
+    private void wireActionsOnce() {
+        if (actionsWired) return;
+        actionsWired = true;
+
+        tabGlobal.addActionListener(e -> { globalTab = true; syncUI(); });
+        tabSelected.addActionListener(e -> { globalTab = false; syncUI(); });
+
+        matteBtn.addActionListener(e -> { material = "Matte"; syncUI(); });
+        satinBtn.addActionListener(e -> { material = "Satin"; syncUI(); });
+        glossBtn.addActionListener(e -> { material = "Gloss"; syncUI(); });
+
+        daylightBtn.addActionListener(e -> { lighting = "Daylight"; syncUI(); });
+        warmBtn.addActionListener(e -> { lighting = "Warm"; syncUI(); });
+        coolBtn.addActionListener(e -> { lighting = "Cool"; syncUI(); });
+        neutralBtn.addActionListener(e -> { lighting = "Neutral"; syncUI(); });
+
+        beforeBtn.addActionListener(e -> { afterMode = false; syncUI(); });
+        afterBtn.addActionListener(e -> { afterMode = true; syncUI(); });
+
+        // Enter key on hex field (only once)
+        hexField.addActionListener(e -> {
+            Color c = parseHex(hexField.getText());
+            if (c != null) {
+                selectedColor = c;
+                syncUI();
+            } else {
+                hexField.setText(toHex(selectedColor));
+            }
+        });
+    }
+
+    private void wireLiveHexValidationOnce() {
+        if (hexDocWired) return;
+        hexDocWired = true;
+
+        hexField.getDocument().addDocumentListener(new DocumentListener() {
+            void onChange() {
+                Color c = parseHex(hexField.getText());
+                if (c != null) {
+                    selectedColor = c;
+                    swatch.setBackground(selectedColor);
+                    previewPanel.repaint();
+                }
+            }
+            @Override public void insertUpdate(DocumentEvent e) { onChange(); }
+            @Override public void removeUpdate(DocumentEvent e) { onChange(); }
+            @Override public void changedUpdate(DocumentEvent e) { onChange(); }
+        });
     }
 
     /* ========================= Load initial state from design ========================= */
@@ -87,13 +245,14 @@ public class ShadingColorPage extends JPanel {
     private void loadInitialFromDesign() {
         if (appState == null) return;
 
-        Design d = appState.getOrCreateCurrentDesign();
+        Design d = appState.getCurrentDesign();
+        if (d == null) return;
+
         List<FurnitureItem> items = d.getItems();
         if (items == null || items.isEmpty()) return;
 
         FurnitureItem target = findSelectedItemOrFirst(items);
 
-        // Pull values from the item into UI state (fallback to defaults)
         Color c = parseHex(target.getColorHex());
         if (c != null) selectedColor = c;
 
@@ -122,12 +281,10 @@ public class ShadingColorPage extends JPanel {
         shell.setBorderPaint(UiKit.BORDER);
         shell.setLayout(new BorderLayout());
 
-        // Left tools panel
         JPanel tools = buildToolsPanel();
         tools.setPreferredSize(new Dimension(340, 0));
         tools.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, UiKit.BORDER));
 
-        // Right preview
         JPanel preview = buildPreviewSide();
 
         shell.add(tools, BorderLayout.WEST);
@@ -143,34 +300,24 @@ public class ShadingColorPage extends JPanel {
         wrap.setOpaque(true);
         wrap.setBackground(UiKit.WHITE);
 
-        // Top header
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
         header.setBorder(new EmptyBorder(16, 16, 12, 16));
 
         JLabel title = new JLabel("Shading & Colour Tools");
         title.setForeground(UiKit.TEXT);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 14.5f));
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
 
         JButton close = UiKit.iconButton("✕");
         close.setToolTipText("Close");
         close.addActionListener(e -> {
-            if (router != null) {
-                router.show(ScreenKeys.PLANNER_2D);
-            } else {
-                JOptionPane.showMessageDialog(
-                        this,
-                        "Close tools (demo).",
-                        "Close",
-                        JOptionPane.INFORMATION_MESSAGE
-                );
-            }
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+            else JOptionPane.showMessageDialog(this, "Close tools (demo).", "Close", JOptionPane.INFORMATION_MESSAGE);
         });
 
         header.add(title, BorderLayout.WEST);
         header.add(close, BorderLayout.EAST);
 
-        // Tabs row (custom styled, no disabled look)
         JPanel tabs = new JPanel(new GridLayout(1, 2, 10, 0));
         tabs.setOpaque(false);
         tabs.setBorder(new EmptyBorder(0, 16, 10, 16));
@@ -178,24 +325,14 @@ public class ShadingColorPage extends JPanel {
         styleTabButton(tabGlobal);
         styleTabButton(tabSelected);
 
-        tabGlobal.addActionListener(e -> {
-            globalTab = true;
-            syncUI();
-        });
-        tabSelected.addActionListener(e -> {
-            globalTab = false;
-            syncUI();
-        });
-
         tabs.add(tabGlobal);
         tabs.add(tabSelected);
 
         JLabel hint = new JLabel("Apply changes to entire room or selected furniture");
         hint.setForeground(UiKit.MUTED);
-        hint.setFont(hint.getFont().deriveFont(11.3f));
+        hint.setFont(UiKit.scaled(hint, Font.PLAIN, 0.88f));
         hint.setBorder(new EmptyBorder(0, 16, 12, 16));
 
-        // Scrollable content
         JPanel content = new JPanel();
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
@@ -242,7 +379,7 @@ public class ShadingColorPage extends JPanel {
     private void styleTabButton(JButton b) {
         b.setFocusPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.8f));
+        b.setFont(UiKit.scaled(b, Font.BOLD, 0.92f));
         b.setBorder(new EmptyBorder(10, 12, 10, 12));
         b.setOpaque(true);
     }
@@ -260,24 +397,14 @@ public class ShadingColorPage extends JPanel {
 
         JLabel title = new JLabel("Preview");
         title.setForeground(UiKit.TEXT);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 13.5f));
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.03f));
 
-        // Before/After toggle
         JPanel toggle = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         toggle.setOpaque(false);
 
         ButtonGroup g = new ButtonGroup();
         g.add(beforeBtn);
         g.add(afterBtn);
-
-        beforeBtn.addActionListener(e -> {
-            afterMode = false;
-            syncUI();
-        });
-        afterBtn.addActionListener(e -> {
-            afterMode = true;
-            syncUI();
-        });
 
         toggle.add(beforeBtn);
         toggle.add(afterBtn);
@@ -300,10 +427,10 @@ public class ShadingColorPage extends JPanel {
 
         JLabel t = new JLabel(text);
         t.setForeground(UiKit.TEXT);
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 12.3f));
+        t.setFont(UiKit.scaled(t, Font.BOLD, 0.98f));
 
         JLabel info = new JLabel("ⓘ");
-        info.setForeground(new Color(0x9CA3AF));
+        info.setForeground(UiKit.MUTED);
         info.setBorder(new EmptyBorder(0, 6, 0, 0));
 
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -333,9 +460,7 @@ public class ShadingColorPage extends JPanel {
 
     private void sampleFromPicker(GradientPicker picker, MouseEvent e) {
         selectedColor = picker.colorAt(e.getX(), e.getY());
-        if (!hexField.hasFocus()) {
-            hexField.setText(toHex(selectedColor));
-        }
+        if (!hexField.hasFocus()) hexField.setText(toHex(selectedColor));
         syncUI();
     }
 
@@ -349,37 +474,9 @@ public class ShadingColorPage extends JPanel {
 
         styleTextField(hexField);
 
-        // Enter to apply
-        hexField.addActionListener(e -> {
-            Color c = parseHex(hexField.getText());
-            if (c != null) {
-                selectedColor = c;
-                syncUI();
-            } else {
-                hexField.setText(toHex(selectedColor));
-            }
-        });
-
         row.add(swatch, BorderLayout.WEST);
         row.add(hexField, BorderLayout.CENTER);
-
         return row;
-    }
-
-    private void wireLiveHexValidation() {
-        hexField.getDocument().addDocumentListener(new DocumentListener() {
-            void onChange() {
-                Color c = parseHex(hexField.getText());
-                if (c != null) {
-                    selectedColor = c;
-                    swatch.setBackground(selectedColor);
-                    previewPanel.repaint();
-                }
-            }
-            @Override public void insertUpdate(DocumentEvent e) { onChange(); }
-            @Override public void removeUpdate(DocumentEvent e) { onChange(); }
-            @Override public void changedUpdate(DocumentEvent e) { onChange(); }
-        });
     }
 
     private JComponent quickPalettes() {
@@ -389,7 +486,7 @@ public class ShadingColorPage extends JPanel {
 
         JLabel t = new JLabel("Quick Palettes");
         t.setForeground(UiKit.MUTED);
-        t.setFont(t.getFont().deriveFont(11.3f));
+        t.setFont(UiKit.scaled(t, Font.PLAIN, 0.88f));
 
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         row.setOpaque(false);
@@ -443,15 +540,15 @@ public class ShadingColorPage extends JPanel {
 
         JLabel t = new JLabel("Material Styles");
         t.setForeground(UiKit.MUTED);
-        t.setFont(t.getFont().deriveFont(11.3f));
+        t.setFont(UiKit.scaled(t, Font.PLAIN, 0.88f));
 
         JPanel row = new JPanel(new GridLayout(1, 3, 10, 0));
         row.setOpaque(false);
         row.setBorder(new EmptyBorder(8, 0, 0, 0));
 
-        styleSmallToggle(matteBtn, "Matte");
-        styleSmallToggle(satinBtn, "Satin");
-        styleSmallToggle(glossBtn, "Gloss");
+        styleSmallToggle(matteBtn);
+        styleSmallToggle(satinBtn);
+        styleSmallToggle(glossBtn);
 
         row.add(matteBtn);
         row.add(satinBtn);
@@ -462,16 +559,12 @@ public class ShadingColorPage extends JPanel {
         return wrap;
     }
 
-    private void styleSmallToggle(JButton btn, String name) {
+    private void styleSmallToggle(JButton btn) {
         btn.setFocusPainted(false);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btn.setFont(btn.getFont().deriveFont(Font.BOLD, 11.5f));
+        btn.setFont(UiKit.scaled(btn, Font.BOLD, 0.90f));
         btn.setBorder(new EmptyBorder(10, 10, 10, 10));
         btn.setOpaque(true);
-        btn.addActionListener(e -> {
-            material = name;
-            syncUI();
-        });
     }
 
     private JComponent shadingSlider() {
@@ -483,15 +576,15 @@ public class ShadingColorPage extends JPanel {
         top.setOpaque(false);
 
         JLabel left = new JLabel("Darker");
-        left.setForeground(new Color(0x9CA3AF));
-        left.setFont(left.getFont().deriveFont(11.3f));
+        left.setForeground(UiKit.MUTED);
+        left.setFont(UiKit.scaled(left, Font.PLAIN, 0.88f));
 
         JLabel right = new JLabel("Lighter");
-        right.setForeground(new Color(0x9CA3AF));
-        right.setFont(right.getFont().deriveFont(11.3f));
+        right.setForeground(UiKit.MUTED);
+        right.setFont(UiKit.scaled(right, Font.PLAIN, 0.88f));
 
         shadingLabel.setForeground(UiKit.MUTED);
-        shadingLabel.setFont(shadingLabel.getFont().deriveFont(11.3f));
+        shadingLabel.setFont(UiKit.scaled(shadingLabel, Font.PLAIN, 0.88f));
         shadingLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
         top.add(left, BorderLayout.WEST);
@@ -519,16 +612,16 @@ public class ShadingColorPage extends JPanel {
 
         JLabel t = new JLabel("Lighting Presets");
         t.setForeground(UiKit.MUTED);
-        t.setFont(t.getFont().deriveFont(11.3f));
+        t.setFont(UiKit.scaled(t, Font.PLAIN, 0.88f));
 
         JPanel grid = new JPanel(new GridLayout(2, 2, 10, 10));
         grid.setOpaque(false);
         grid.setBorder(new EmptyBorder(8, 0, 0, 0));
 
-        stylePreset(daylightBtn, "Daylight");
-        stylePreset(warmBtn, "Warm");
-        stylePreset(coolBtn, "Cool");
-        stylePreset(neutralBtn, "Neutral");
+        stylePreset(daylightBtn);
+        stylePreset(warmBtn);
+        stylePreset(coolBtn);
+        stylePreset(neutralBtn);
 
         grid.add(daylightBtn);
         grid.add(warmBtn);
@@ -540,16 +633,12 @@ public class ShadingColorPage extends JPanel {
         return wrap;
     }
 
-    private void stylePreset(JButton b, String preset) {
+    private void stylePreset(JButton b) {
         b.setFocusPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         b.setBorder(new EmptyBorder(10, 12, 10, 12));
-        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.6f));
+        b.setFont(UiKit.scaled(b, Font.BOLD, 0.90f));
         b.setOpaque(true);
-        b.addActionListener(e -> {
-            lighting = preset;
-            syncUI();
-        });
     }
 
     private JComponent bottomButtons() {
@@ -563,6 +652,9 @@ public class ShadingColorPage extends JPanel {
 
         JButton apply = UiKit.primaryButton("Apply Changes");
         JButton revert = UiKit.ghostButton("Revert");
+
+        apply.setFont(UiKit.scaled(apply, Font.BOLD, 0.98f));
+        revert.setFont(UiKit.scaled(revert, Font.PLAIN, 0.98f));
 
         apply.setBorder(new EmptyBorder(10, 12, 10, 12));
         revert.setBorder(new EmptyBorder(10, 12, 10, 12));
@@ -583,8 +675,8 @@ public class ShadingColorPage extends JPanel {
         row.add(revert);
 
         JLabel reset = new JLabel("Reset to Default");
-        reset.setForeground(new Color(0x6B7280));
-        reset.setFont(reset.getFont().deriveFont(Font.PLAIN, 11.3f));
+        reset.setForeground(UiKit.MUTED);
+        reset.setFont(UiKit.scaled(reset, Font.PLAIN, 0.88f));
         reset.setHorizontalAlignment(SwingConstants.CENTER);
         reset.setBorder(new EmptyBorder(10, 0, 0, 0));
         reset.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -613,17 +705,20 @@ public class ShadingColorPage extends JPanel {
 
     private ApplyResult applyToDesign() {
         if (appState == null) {
-            return new ApplyResult(false, "AppState is not wired into this screen yet.\n(Use the constructor: new ShadingColorPage(frame, router, appState))");
+            return new ApplyResult(false, "AppState is not wired into this screen yet.\n(Use: new ShadingColorPage(frame, router, appState))");
         }
 
-        Design design = appState.getOrCreateCurrentDesign();
+        Design design = appState.getCurrentDesign();
+        if (design == null) {
+            return new ApplyResult(false, "No design is selected.\nGo to Design Library and select (or create) a design first.");
+        }
+
         List<FurnitureItem> items = design.getItems();
         if (items == null || items.isEmpty()) {
             return new ApplyResult(false, "No furniture items exist in this design yet.\nGo to Planner 2D and add an item first.");
         }
 
         String hex = toHex(selectedColor);
-
         int updated = 0;
 
         if (globalTab) {
@@ -648,9 +743,8 @@ public class ShadingColorPage extends JPanel {
             }
         }
 
-        // touch updated time + persist
         design.setLastUpdatedEpochMs(System.currentTimeMillis());
-        appState.getRepo().upsert(design);
+        if (appState.getRepo() != null) appState.getRepo().upsert(design);
 
         String target = globalTab ? "Global Design (all items)" : "Selected Item";
         String msg =
@@ -684,39 +778,34 @@ public class ShadingColorPage extends JPanel {
     /* ========================= Helpers ========================= */
 
     private void styleTextField(JTextField tf) {
-        tf.setFont(tf.getFont().deriveFont(12.8f));
+        tf.setFont(UiKit.scaled(tf, Font.PLAIN, 1.00f));
         tf.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(8, 10, 8, 10)
         ));
-        tf.setBackground(Color.WHITE);
-        tf.setForeground(new Color(0x111827));
+        tf.setBackground(UiKit.WHITE);
+        tf.setForeground(UiKit.TEXT);
+        tf.setCaretColor(UiKit.TEXT);
         tf.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
     }
 
     private void syncUI() {
-        // tabs styling
         styleTab(tabGlobal, globalTab);
         styleTab(tabSelected, !globalTab);
 
-        // swatch
         swatch.setBackground(selectedColor);
 
-        // material highlight
         highlightButton(matteBtn, "Matte".equals(material));
         highlightButton(satinBtn, "Satin".equals(material));
         highlightButton(glossBtn, "Gloss".equals(material));
 
-        // lighting highlight
         highlightButton(daylightBtn, "Daylight".equals(lighting));
         highlightButton(warmBtn, "Warm".equals(lighting));
         highlightButton(coolBtn, "Cool".equals(lighting));
         highlightButton(neutralBtn, "Neutral".equals(lighting));
 
-        // shading label
         shadingLabel.setText("Current: " + shading + "%");
 
-        // before/after
         afterBtn.setSelected(afterMode);
         beforeBtn.setSelected(!afterMode);
         styleToggle(beforeBtn, !afterMode);
@@ -729,12 +818,12 @@ public class ShadingColorPage extends JPanel {
 
     private void styleTab(JButton b, boolean active) {
         if (active) {
-            b.setBackground(new Color(0x2563EB));
+            b.setBackground(UiKit.PRIMARY);
             b.setForeground(Color.WHITE);
-            b.setBorder(new LineBorder(new Color(0x2563EB), 1, true));
+            b.setBorder(new LineBorder(UiKit.PRIMARY, 1, true));
         } else {
             b.setBackground(new Color(0xF3F4F6));
-            b.setForeground(new Color(0x111827));
+            b.setForeground(UiKit.TEXT);
             b.setBorder(new LineBorder(UiKit.BORDER, 1, true));
         }
     }
@@ -745,8 +834,8 @@ public class ShadingColorPage extends JPanel {
             b.setForeground(new Color(0x1D4ED8));
             b.setBorder(new LineBorder(new Color(0xC7D2FE), 1, true));
         } else {
-            b.setBackground(Color.WHITE);
-            b.setForeground(new Color(0x111827));
+            b.setBackground(UiKit.WHITE);
+            b.setForeground(UiKit.TEXT);
             b.setBorder(new LineBorder(UiKit.BORDER, 1, true));
         }
     }
@@ -755,14 +844,14 @@ public class ShadingColorPage extends JPanel {
         b.setFocusPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         b.setBorder(new EmptyBorder(6, 10, 6, 10));
-        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.4f));
+        b.setFont(UiKit.scaled(b, Font.BOLD, 0.90f));
         b.setOpaque(true);
         if (active) {
-            b.setBackground(new Color(0x2563EB));
+            b.setBackground(UiKit.PRIMARY);
             b.setForeground(Color.WHITE);
         } else {
             b.setBackground(new Color(0xF3F4F6));
-            b.setForeground(new Color(0x111827));
+            b.setForeground(UiKit.TEXT);
         }
     }
 
@@ -812,7 +901,6 @@ public class ShadingColorPage extends JPanel {
             g2.setPaint(lg);
             g2.fillRoundRect(0, 0, w, h, 12, 12);
 
-            // vertical whitening overlay (top -> bottom)
             GradientPaint vp = new GradientPaint(
                     0, 0, new Color(255, 255, 255, 0),
                     0, h, new Color(255, 255, 255, 90)
@@ -849,7 +937,7 @@ public class ShadingColorPage extends JPanel {
 
             int h = Math.max(1, getHeight());
             float vy = Math.min(1f, Math.max(0f, y / (float) h));
-            float white = vy * 0.25f; // more white lower down
+            float white = vy * 0.25f;
 
             r = (int) (r + (255 - r) * white);
             g = (int) (g + (255 - g) * white);
@@ -881,7 +969,6 @@ public class ShadingColorPage extends JPanel {
             g2.setColor(new Color(0xF3F4F6));
             g2.fillRect(0, 0, w, h);
 
-            // subtle top border
             g2.setColor(new Color(0xE5E7EB));
             g2.drawLine(0, 0, w, 0);
 
@@ -903,24 +990,20 @@ public class ShadingColorPage extends JPanel {
             if ("Cool".equals(lighting)) adjusted = blend(adjusted, new Color(120, 180, 255), 0.18f);
             if ("Neutral".equals(lighting)) adjusted = blend(adjusted, new Color(240, 240, 240), 0.10f);
 
-            // card
             g2.setColor(adjusted);
             g2.fillRoundRect(x, y, boxW, boxH, 22, 22);
 
             g2.setColor(new Color(0xD1D5DB));
             g2.drawRoundRect(x, y, boxW, boxH, 22, 22);
 
-            // highlight strip for material effect
             g2.setColor(new Color(255, 255, 255, (int) (255 * glossBoost)));
             g2.fillRoundRect(x + 14, y + 14, boxW - 28, 38, 18, 18);
 
-            // label
             g2.setColor(new Color(0, 0, 0, 110));
-            g2.setFont(g2.getFont().deriveFont(Font.BOLD, 13f));
+            g2.setFont(UiKit.scaled(new JLabel(), Font.BOLD, 1.00f));
             g2.drawString(afterMode ? "After Preview" : "Before Preview", x + 18, y + 70);
 
-            // small metadata
-            g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 12f));
+            g2.setFont(UiKit.scaled(new JLabel(), Font.PLAIN, 0.92f));
             g2.drawString("Material: " + material, x + 18, y + boxH - 44);
             g2.drawString("Lighting: " + lighting + "   •   Shading: " + shading + "%", x + 18, y + boxH - 22);
 

@@ -4,6 +4,9 @@ import javax.swing.text.JTextComponent;
 
 import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
+import com.roomviz.data.SettingsRepository;
+import com.roomviz.model.UserSettings;
+import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -18,13 +21,17 @@ public class LoginScreen extends JPanel {
     private final JPasswordField passwordField;
     private final JLabel errorLabel;
 
-    public LoginScreen(AppFrame frame, Router router) {
+    private final SettingsRepository settingsRepo;
+
+    public LoginScreen(AppFrame frame, Router router, SettingsRepository settingsRepo) {
+        this.settingsRepo = settingsRepo;
+
         setLayout(new BorderLayout());
-        setBackground(new Color(0xF6F7FB));
+        setBackground(UiKit.BG);
 
         // ===== Left + Right split =====
         JPanel left = new JPanel(new BorderLayout());
-        left.setBackground(Color.WHITE);
+        left.setBackground(UiKit.WHITE);
 
         JPanel right = new GradientPanel(
                 new Color(0x5B2BFF),
@@ -44,12 +51,13 @@ public class LoginScreen extends JPanel {
         brandBar.setOpaque(false);
 
         JLabel brand = new JLabel("RoomViz");
-        brand.setFont(brand.getFont().deriveFont(Font.BOLD, 16f));
+        brand.setForeground(UiKit.TEXT);
+        brand.setFont(UiKit.scaled(brand, Font.BOLD, 1.10f));
         brandBar.add(brand);
 
         JLabel subtitle = new JLabel("Interior Design Studio");
-        subtitle.setForeground(new Color(0x6B7280));
-        subtitle.setFont(subtitle.getFont().deriveFont(12f));
+        subtitle.setForeground(UiKit.MUTED);
+        subtitle.setFont(UiKit.scaled(subtitle, Font.PLAIN, 0.92f));
         brandBar.add(subtitle);
 
         left.add(brandBar, BorderLayout.NORTH);
@@ -66,12 +74,13 @@ public class LoginScreen extends JPanel {
 
         JLabel h1 = new JLabel("Welcome back");
         h1.setAlignmentX(Component.LEFT_ALIGNMENT);
-        h1.setFont(h1.getFont().deriveFont(Font.BOLD, 22f));
+        h1.setForeground(UiKit.TEXT);
+        h1.setFont(UiKit.scaled(h1, Font.BOLD, 1.35f));
 
         JLabel p = new JLabel("<html><div style='width:280px;'>Sign in to manage your designs and start a new visualization</div></html>");
         p.setAlignmentX(Component.LEFT_ALIGNMENT);
-        p.setForeground(new Color(0x6B7280));
-        p.setFont(p.getFont().deriveFont(12f));
+        p.setForeground(UiKit.MUTED);
+        p.setFont(UiKit.scaled(p, Font.PLAIN, 0.92f));
 
         card.add(h1);
         card.add(Box.createVerticalStrut(6));
@@ -107,8 +116,8 @@ public class LoginScreen extends JPanel {
 
         JCheckBox remember = new JCheckBox("Remember me");
         remember.setOpaque(false);
-        remember.setForeground(new Color(0x374151));
-        remember.setFont(remember.getFont().deriveFont(12f));
+        remember.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x374151));
+        remember.setFont(UiKit.scaled(remember, Font.PLAIN, 0.92f));
 
         JButton forgot = linkButton("Forgot password?");
         forgot.addActionListener(e ->
@@ -124,19 +133,19 @@ public class LoginScreen extends JPanel {
         // Error label (hidden until needed)
         errorLabel = new JLabel(" ");
         errorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        errorLabel.setForeground(new Color(0xDC2626));
-        errorLabel.setFont(errorLabel.getFont().deriveFont(12f));
+        errorLabel.setForeground(UiKit.DANGER);
+        errorLabel.setFont(UiKit.scaled(errorLabel, Font.PLAIN, 0.92f));
         card.add(errorLabel);
         card.add(Box.createVerticalStrut(8));
 
         // Login button
-        JButton loginBtn = new JButton("Log in");
-        stylePrimaryButton(loginBtn);
+        JButton loginBtn = UiKit.primaryGradientButton("Log in");
         loginBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         loginBtn.addActionListener(e -> {
             String email = emailField.getText().trim();
             String pw = new String(passwordField.getPassword()).trim();
 
+            // Basic placeholder checks
             if (email.isEmpty() || email.equals("designer@studio.com")) {
                 showError("Please enter your email address.");
                 return;
@@ -146,18 +155,65 @@ public class LoginScreen extends JPanel {
                 return;
             }
 
+            // ✅ REAL validation against settings.json
+            UserSettings s = (settingsRepo == null) ? null : settingsRepo.get();
+
+            String expectedEmail = (s == null) ? "" : safeLower(s.getEmail());
+            String expectedPw = (s == null) ? "" : safe(s.getPasswordPlain());
+
+            // Email must match (case-insensitive)
+            if (!expectedEmail.isEmpty() && !safeLower(email).equals(expectedEmail)) {
+                showError("Email not recognized for this device. Use the saved account email.");
+                return;
+            }
+
+            // If password is set, enforce it
+            if (expectedPw != null && !expectedPw.isEmpty()) {
+                if (!pw.equals(expectedPw)) {
+                    showError("Incorrect password.");
+                    return;
+                }
+            } else {
+                // Demo mode: no password has been set yet
+                JOptionPane.showMessageDialog(
+                        this,
+                        "No password is set yet in Settings.\nLogging in using coursework demo mode.",
+                        "Demo Login",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+            }
+
             showError(" ");
-            frame.goToAppShell(); // ✅ keep your existing navigation
+            frame.goToAppShell();
         });
 
-        card.add(loginBtn);
+        // Actions Row (Login + Demo)
+        JPanel actionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        actionsRow.setOpaque(false);
+        actionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        actionsRow.add(loginBtn);
+
+        JButton demoBtn = UiKit.ghostButton("Demo Login");
+        demoBtn.addActionListener(e -> {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Logging in using coursework demo mode.",
+                    "Demo Login",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            frame.goToAppShell();
+        });
+        actionsRow.add(demoBtn);
+
+        card.add(actionsRow);
         card.add(Box.createVerticalStrut(14));
 
         // Small helper text
         JLabel small = new JLabel("Your account is for store designers only.");
         small.setAlignmentX(Component.LEFT_ALIGNMENT);
-        small.setForeground(new Color(0x6B7280));
-        small.setFont(small.getFont().deriveFont(11f));
+        small.setForeground(UiKit.MUTED);
+        small.setFont(UiKit.scaled(small, Font.PLAIN, 0.88f));
         card.add(small);
         card.add(Box.createVerticalStrut(12));
 
@@ -171,12 +227,7 @@ public class LoginScreen extends JPanel {
                 JOptionPane.showMessageDialog(this, "Request access flow can be added later.", "Info", JOptionPane.INFORMATION_MESSAGE)
         );
 
-        JButton demo = new JButton("Continue as demo");
-        styleSecondaryButton(demo);
-        demo.addActionListener(e -> frame.goToAppShell());
-
         bottomRow.add(requestAccess, BorderLayout.WEST);
-        bottomRow.add(demo, BorderLayout.EAST);
 
         card.add(bottomRow);
 
@@ -190,16 +241,16 @@ public class LoginScreen extends JPanel {
         rightContent.setBorder(new EmptyBorder(60, 60, 60, 60));
 
         JLabel icon = new JLabel("\uD83D\uDECB"); // simple placeholder icon
-        icon.setFont(icon.getFont().deriveFont(30f));
+        icon.setFont(UiKit.scaled(icon, Font.PLAIN, 1.65f)); // scales with settings
         icon.setForeground(Color.WHITE);
 
         JLabel title = new JLabel("<html>Design stunning room<br/>visualizations</html>");
         title.setForeground(Color.WHITE);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 26f));
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.70f));
 
         JLabel desc = new JLabel("<html><div style='width:320px;'>Create immersive furniture layouts and bring your interior design visions to life with powerful visualization tools.</div></html>");
         desc.setForeground(new Color(255, 255, 255, 210));
-        desc.setFont(desc.getFont().deriveFont(13f));
+        desc.setFont(UiKit.scaled(desc, Font.PLAIN, 1.00f));
 
         rightContent.add(icon);
         rightContent.add(Box.createVerticalStrut(14));
@@ -217,13 +268,25 @@ public class LoginScreen extends JPanel {
         right.add(rightContent);
     }
 
-    // ===== UI helpers =====
+    // ===== helpers =====
+
+    private boolean isHighContrast() {
+        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s.trim();
+    }
+
+    private static String safeLower(String s) {
+        return safe(s).toLowerCase();
+    }
 
     private JLabel label(String text) {
         JLabel l = new JLabel(text);
         l.setAlignmentX(Component.LEFT_ALIGNMENT);
-        l.setForeground(new Color(0x111827));
-        l.setFont(l.getFont().deriveFont(12f));
+        l.setForeground(UiKit.TEXT);
+        l.setFont(UiKit.scaled(l, Font.PLAIN, 0.92f));
         return l;
     }
 
@@ -240,8 +303,8 @@ public class LoginScreen extends JPanel {
         b.setBorderPainted(false);
         b.setContentAreaFilled(false);
         b.setFocusPainted(false);
-        b.setForeground(new Color(0x6D28D9));
-        b.setFont(b.getFont().deriveFont(12f));
+        b.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x6D28D9));
+        b.setFont(UiKit.scaled(b, Font.PLAIN, 0.92f));
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
     }
@@ -252,11 +315,11 @@ public class LoginScreen extends JPanel {
 
         JLabel dot = new JLabel("✓");
         dot.setForeground(Color.WHITE);
-        dot.setFont(dot.getFont().deriveFont(Font.BOLD, 14f));
+        dot.setFont(UiKit.scaled(dot, Font.BOLD, 1.05f));
 
         JLabel t = new JLabel(text);
         t.setForeground(new Color(255, 255, 255, 220));
-        t.setFont(t.getFont().deriveFont(13f));
+        t.setFont(UiKit.scaled(t, Font.PLAIN, 1.00f));
 
         p.add(dot);
         p.add(t);
@@ -264,46 +327,30 @@ public class LoginScreen extends JPanel {
     }
 
     private void styleTextField(JTextComponent field) {
-        field.setFont(field.getFont().deriveFont(13f));
+        field.setFont(UiKit.scaled((JComponent) field, Font.PLAIN, 1.00f));
         field.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0xE5E7EB), 1),
+                BorderFactory.createLineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(10, 12, 10, 12)
         ));
-        field.setBackground(Color.WHITE);
-        field.setForeground(new Color(0x111827));
+        field.setBackground(UiKit.WHITE);
+        field.setForeground(UiKit.TEXT);
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        field.setCaretColor(UiKit.TEXT);
     }
 
-    private void stylePrimaryButton(JButton b) {
-        b.setBackground(new Color(0x6D28D9));
-        b.setForeground(Color.WHITE);
-        b.setFocusPainted(false);
-        b.setBorder(new EmptyBorder(12, 14, 12, 14));
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFont(b.getFont().deriveFont(Font.BOLD, 13f));
-        b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
-    }
-
-    private void styleSecondaryButton(JButton b) {
-        b.setBackground(Color.WHITE);
-        b.setForeground(new Color(0x6D28D9));
-        b.setFocusPainted(false);
-        b.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0xD8B4FE), 1),
-                new EmptyBorder(10, 14, 10, 14)
-        ));
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFont(b.getFont().deriveFont(Font.PLAIN, 12f));
-    }
 
     private void showError(String msg) {
-        errorLabel.setText(msg);
+        errorLabel.setText(msg == null ? " " : msg);
+    }
+
+    private Color placeholderColor() {
+        return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
     }
 
     // ===== Placeholder support (simple) =====
     private void setPlaceholder(JTextComponent field, String placeholder) {
         field.setText(placeholder);
-        field.setForeground(new Color(0x9CA3AF));
+        field.setForeground(placeholderColor());
 
         field.addFocusListener(new FocusAdapter() {
             @Override
@@ -311,7 +358,7 @@ public class LoginScreen extends JPanel {
                 String t = field.getText();
                 if (t != null && t.equals(placeholder)) {
                     field.setText("");
-                    field.setForeground(new Color(0x111827));
+                    field.setForeground(UiKit.TEXT);
                 }
             }
 
@@ -320,7 +367,7 @@ public class LoginScreen extends JPanel {
                 String t = field.getText();
                 if (t == null || t.trim().isEmpty()) {
                     field.setText(placeholder);
-                    field.setForeground(new Color(0x9CA3AF));
+                    field.setForeground(placeholderColor());
                 }
             }
         });
@@ -345,11 +392,11 @@ public class LoginScreen extends JPanel {
             g2.fill(new RoundRectangle2D.Float(3, 4, getWidth() - 6, getHeight() - 6, arc, arc));
 
             // main
-            g2.setColor(Color.WHITE);
+            g2.setColor(UiKit.WHITE);
             g2.fill(r);
 
             // border
-            g2.setColor(new Color(0xE5E7EB));
+            g2.setColor(UiKit.BORDER);
             g2.draw(r);
 
             g2.dispose();

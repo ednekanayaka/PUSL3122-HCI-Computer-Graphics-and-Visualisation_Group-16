@@ -4,10 +4,11 @@ import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
+import com.roomviz.data.SettingsRepository;
 import com.roomviz.model.Design;
+import com.roomviz.model.DesignStatus;
 import com.roomviz.model.RoomSpec;
 import com.roomviz.ui.UiKit;
-import com.roomviz.model.DesignStatus;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -51,6 +52,7 @@ public class NewDesignWizardPage extends JPanel {
 
     // ✅ Step 1 shared app state (repo + current selection)
     private final AppState appState;
+    private final SettingsRepository settingsRepo;
 
     // Step 3 (L-Shape extra fields)
     private final JTextField lCutWidth = new JTextField();
@@ -66,22 +68,33 @@ public class NewDesignWizardPage extends JPanel {
     private static final String PH_LCUT_W = "e.g., 8";
     private static final String PH_LCUT_L = "e.g., 6";
 
-    // ✅ Existing constructor kept (fallback/no persistence)
+    // Existing constructor kept (fallback/no persistence)
     public NewDesignWizardPage(AppFrame frame, Router router) {
-        this(frame, router, null);
+        this(frame, router, null, null);
     }
 
-    // ✅ New constructor used by ShellScreen
+    // New constructor used by ShellScreen
     public NewDesignWizardPage(AppFrame frame, Router router, AppState appState) {
+        this(frame, router, appState, null);
+    }
+
+    public NewDesignWizardPage(AppFrame frame, Router router, AppState appState, SettingsRepository settingsRepo) {
         this.appState = appState;
+        this.settingsRepo = settingsRepo;
 
         setLayout(new BorderLayout());
         setOpaque(false);
+
+        // Centered container to limit width for responsiveness
+        JPanel formCenterWrap = new JPanel(new GridBagLayout());
+        formCenterWrap.setOpaque(false);
 
         JPanel page = new JPanel();
         page.setOpaque(false);
         page.setLayout(new BoxLayout(page, BoxLayout.Y_AXIS));
         page.setBorder(new EmptyBorder(18, 24, 18, 24));
+        page.setPreferredSize(new Dimension(800, 700));
+        page.setMaximumSize(new Dimension(800, Integer.MAX_VALUE));
 
         page.add(topHeader(frame, router));
         page.add(Box.createVerticalStrut(14));
@@ -94,7 +107,9 @@ public class NewDesignWizardPage extends JPanel {
 
         page.add(bottomNav(router));
 
-        JScrollPane scroller = new JScrollPane(page);
+        formCenterWrap.add(page, new GridBagConstraints());
+
+        JScrollPane scroller = new JScrollPane(formCenterWrap);
         scroller.setBorder(BorderFactory.createEmptyBorder());
         scroller.getViewport().setOpaque(true);
         scroller.getViewport().setBackground(UiKit.BG);
@@ -103,7 +118,23 @@ public class NewDesignWizardPage extends JPanel {
 
         add(scroller, BorderLayout.CENTER);
 
+        // ✅ Apply default units from Settings
+        applyDefaultUnitFromSettings();
+
         setStep(1);
+    }
+
+    private boolean isHighContrast() {
+        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+    }
+
+    private Color placeholderColor() {
+        return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
+    }
+
+    private Color subMuted() {
+        // sometimes UiKit.MUTED is enough; but this keeps strong readability in HC
+        return isHighContrast() ? UiKit.TEXT : UiKit.MUTED;
     }
 
     /* ========================= Header ========================= */
@@ -115,14 +146,14 @@ public class NewDesignWizardPage extends JPanel {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        UiKit.RoundedPanel icon = new UiKit.RoundedPanel(10, new Color(0xEEF2FF));
-        icon.setBorderPaint(new Color(0xC7D2FE));
+        UiKit.RoundedPanel icon = new UiKit.RoundedPanel(10, isHighContrast() ? UiKit.WHITE : new Color(0xEEF2FF));
+        icon.setBorderPaint(isHighContrast() ? UiKit.BORDER : new Color(0xC7D2FE));
         icon.setPreferredSize(new Dimension(32, 32));
         icon.setLayout(new GridBagLayout());
 
         JLabel i = new JLabel("✦");
-        i.setForeground(UiKit.PRIMARY_DARK);
-        i.setFont(i.getFont().deriveFont(Font.BOLD, 14f));
+        i.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.PRIMARY_DARK);
+        i.setFont(UiKit.scaled(i, Font.BOLD, 1.05f));
         icon.add(i);
 
         JPanel text = new JPanel();
@@ -131,11 +162,11 @@ public class NewDesignWizardPage extends JPanel {
 
         JLabel title = new JLabel("New Design Wizard");
         title.setForeground(UiKit.TEXT);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 14.5f));
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
 
         JLabel sub = new JLabel("Create a custom room design");
-        sub.setForeground(UiKit.MUTED);
-        sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12f));
+        sub.setForeground(subMuted());
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
         sub.setBorder(new EmptyBorder(2, 0, 0, 0));
 
         text.add(title);
@@ -148,14 +179,12 @@ public class NewDesignWizardPage extends JPanel {
         right.setOpaque(false);
 
         JButton saveDraft = UiKit.ghostButton("💾  Save as Draft");
+        saveDraft.setFont(UiKit.scaled(saveDraft, Font.PLAIN, 1.00f));
         saveDraft.addActionListener(e -> onSaveDraft(router));
 
         JButton close = UiKit.iconButton("✕");
         close.setToolTipText("Close wizard");
-        close.addActionListener(e -> {
-            // Safe default: go back to library
-            router.show(ScreenKeys.DESIGN_LIBRARY);
-        });
+        close.addActionListener(e -> router.show(ScreenKeys.DESIGN_LIBRARY));
 
         right.add(saveDraft);
         right.add(close);
@@ -189,11 +218,11 @@ public class NewDesignWizardPage extends JPanel {
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
 
         stepTitle.setForeground(UiKit.TEXT);
-        stepTitle.setFont(stepTitle.getFont().deriveFont(Font.BOLD, 16f));
+        stepTitle.setFont(UiKit.scaled(stepTitle, Font.BOLD, 1.30f));
 
-        stepSubtitle.setForeground(UiKit.MUTED);
-        stepSubtitle.setFont(stepSubtitle.getFont().deriveFont(Font.PLAIN, 12.2f));
-        stepSubtitle.setBorder(new EmptyBorder(6, 0, 0, 0));
+        stepSubtitle.setForeground(subMuted());
+        stepSubtitle.setFont(UiKit.scaled(stepSubtitle, Font.PLAIN, 1.00f));
+        stepSubtitle.setBorder(new EmptyBorder(8, 0, 0, 0));
 
         header.add(stepTitle);
         header.add(stepSubtitle);
@@ -206,7 +235,7 @@ public class NewDesignWizardPage extends JPanel {
 
         JPanel body = new JPanel(new BorderLayout());
         body.setOpaque(false);
-        body.setBorder(new EmptyBorder(14, 0, 0, 0));
+        body.setBorder(new EmptyBorder(24, 0, 0, 0));
         body.add(formHost, BorderLayout.CENTER);
 
         card.add(header, BorderLayout.NORTH);
@@ -232,7 +261,6 @@ public class NewDesignWizardPage extends JPanel {
         backBtn.addActionListener(e -> setStep(currentStep - 1));
         nextBtn.addActionListener(e -> {
             if (currentStep < STEPS) {
-                // Step validation when moving forward
                 if (validateStep(currentStep)) setStep(currentStep + 1);
             } else {
                 onFinish(router);
@@ -252,15 +280,13 @@ public class NewDesignWizardPage extends JPanel {
     private JComponent step1Panel() {
         JPanel p = formStack();
 
-        p.add(fieldBlock("Design Name *", hint(PH_DESIGN, designName)));
+        p.add(fieldBlock("🏷️ Design Name *", hint(PH_DESIGN, designName)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(fieldBlock("Customer Name *", hint(PH_CUSTOMER, customerName)));
+        p.add(fieldBlock("👤 Customer Name *", hint(PH_CUSTOMER, customerName)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(textAreaBlock("Project Notes (Optional)",
-                PH_NOTES,
-                notes));
+        p.add(textAreaBlock("📝 Project Notes", PH_NOTES, notes));
 
         return p;
     }
@@ -268,28 +294,18 @@ public class NewDesignWizardPage extends JPanel {
     private JComponent step2Panel() {
         JPanel p = formStack();
 
-        JPanel row = new JPanel(new GridLayout(1, 3, 12, 0));
-        row.setOpaque(false);
+        p.add(fieldBlock("📏 Room Width *", hint(PH_WIDTH, roomWidth)));
+        p.add(Box.createVerticalStrut(12));
 
-        row.add(fieldBlock("Room Width *", hint(PH_WIDTH, roomWidth)));
-        row.add(fieldBlock("Room Length *", hint(PH_LENGTH, roomLength)));
+        p.add(fieldBlock("📐 Room Length *", hint(PH_LENGTH, roomLength)));
+        p.add(Box.createVerticalStrut(12));
 
-        JPanel unitWrap = new JPanel();
-        unitWrap.setOpaque(false);
-        unitWrap.setLayout(new BoxLayout(unitWrap, BoxLayout.Y_AXIS));
-        unitWrap.add(label("Units *"));
-        unitWrap.add(Box.createVerticalStrut(6));
-        UiKit.styleDropdown(unit);
-        unitWrap.add(unit);
-
-        row.add(unitWrap);
-
-        p.add(row);
-        p.add(Box.createVerticalStrut(10));
+        p.add(dropdownBlock("⚖️ Units *", unit));
+        p.add(Box.createVerticalStrut(18));
 
         JLabel info = new JLabel("Tip: Use the same units you will use in the 2D Planner.");
-        info.setForeground(UiKit.MUTED);
-        info.setFont(info.getFont().deriveFont(11.5f));
+        info.setForeground(subMuted());
+        info.setFont(UiKit.scaled(info, Font.PLAIN, 0.90f));
         p.add(info);
 
         return p;
@@ -299,16 +315,16 @@ public class NewDesignWizardPage extends JPanel {
         JPanel p = formStack();
 
         UiKit.styleDropdown(roomShape);
-        p.add(dropdownBlock("Room Shape *", roomShape));
-        p.add(Box.createVerticalStrut(12));
+        p.add(dropdownBlock("💠 Room Shape *", roomShape));
+        p.add(Box.createVerticalStrut(20));
 
         // --- L-shape dimensions block (shown only if L-Shape selected) ---
         lShapeDimsWrap.setOpaque(false);
         lShapeDimsWrap.setLayout(new BoxLayout(lShapeDimsWrap, BoxLayout.Y_AXIS));
 
         JLabel help = new JLabel("If you selected L-Shape, enter the cut-out size (top-right corner).");
-        help.setForeground(UiKit.MUTED);
-        help.setFont(help.getFont().deriveFont(11.5f));
+        help.setForeground(subMuted());
+        help.setFont(UiKit.scaled(help, Font.PLAIN, 0.90f));
         lShapeDimsWrap.add(help);
         lShapeDimsWrap.add(Box.createVerticalStrut(10));
 
@@ -321,8 +337,8 @@ public class NewDesignWizardPage extends JPanel {
         lShapeDimsWrap.add(row);
 
         JLabel tip = new JLabel("Example: Outer = 24×18, Cut-out = 8×6 → L-Shape floor.");
-        tip.setForeground(UiKit.MUTED);
-        tip.setFont(tip.getFont().deriveFont(11.2f));
+        tip.setForeground(subMuted());
+        tip.setFont(UiKit.scaled(tip, Font.PLAIN, 0.88f));
         tip.setBorder(new EmptyBorder(8, 0, 0, 0));
         lShapeDimsWrap.add(tip);
 
@@ -341,11 +357,13 @@ public class NewDesignWizardPage extends JPanel {
         JPanel p = formStack();
 
         UiKit.styleDropdown(colorScheme);
-        p.add(dropdownBlock("Color Scheme *", colorScheme));
-        p.add(Box.createVerticalStrut(12));
+        p.add(dropdownBlock("🎨 Color Scheme *", colorScheme));
+        p.add(Box.createVerticalStrut(20));
 
         JPanel palettes = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         palettes.setOpaque(false);
+
+        // These are decorative; keep colors but make borders HC-friendly
         palettes.add(colorDot(new Color(0x111827)));
         palettes.add(colorDot(new Color(0xF5F3FF)));
         palettes.add(colorDot(new Color(0xEDE9FE)));
@@ -354,6 +372,7 @@ public class NewDesignWizardPage extends JPanel {
 
         JLabel prev = new JLabel("Preview");
         prev.setForeground(UiKit.TEXT);
+        prev.setFont(UiKit.scaled(prev, Font.BOLD, 1.00f));
 
         p.add(prev);
         p.add(Box.createVerticalStrut(8));
@@ -370,6 +389,15 @@ public class NewDesignWizardPage extends JPanel {
 
         currentStep = step;
         stepper.setActive(step);
+
+        if (nextBtn instanceof UiKit.RoundButton) {
+            UiKit.RoundButton rb = (UiKit.RoundButton) nextBtn;
+            if (step == 4) {
+                rb.setGradient(new Color(0x6366F1), new Color(0x4338CA));
+            } else {
+                rb.setGradient(null, null); // Reset to primary colors
+            }
+        }
 
         switch (step) {
             case 1 -> {
@@ -410,7 +438,6 @@ public class NewDesignWizardPage extends JPanel {
         lShapeDimsWrap.setVisible(isL);
 
         if (!isL) {
-            // clear fields when not L-shape to prevent saving junk
             lCutWidth.setText("");
             lCutLength.setText("");
         }
@@ -452,7 +479,6 @@ public class NewDesignWizardPage extends JPanel {
                 "Draft saved ✅",
                 "Saved", JOptionPane.INFORMATION_MESSAGE);
 
-        // optional: go to details after draft save
         router.show(ScreenKeys.DESIGN_DETAILS);
     }
 
@@ -464,7 +490,6 @@ public class NewDesignWizardPage extends JPanel {
             return;
         }
 
-        // Validate all required steps
         if (!validateStep(1) || !validateStep(2) || !validateStep(3) || !validateStep(4)) {
             return;
         }
@@ -481,7 +506,6 @@ public class NewDesignWizardPage extends JPanel {
                 "Design created ✅",
                 "Success", JOptionPane.INFORMATION_MESSAGE);
 
-        // go to details so user can Open 2D / shading / 3D next
         router.show(ScreenKeys.PLANNER_2D);
     }
 
@@ -534,7 +558,6 @@ public class NewDesignWizardPage extends JPanel {
                     double cutL = Double.parseDouble(cl);
                     if (cutW <= 0 || cutL <= 0) throw new NumberFormatException();
 
-                    // Must be smaller than outer dimensions (from step 2)
                     double outerW = Double.parseDouble(cleanField(roomWidth, PH_WIDTH));
                     double outerL = Double.parseDouble(cleanField(roomLength, PH_LENGTH));
 
@@ -573,7 +596,6 @@ public class NewDesignWizardPage extends JPanel {
                 w = Double.parseDouble(wStr);
                 l = Double.parseDouble(lStr);
             } catch (Exception ignored) {
-                // keep as 0 if invalid in draft mode
                 if (!draftMode) {
                     JOptionPane.showMessageDialog(this,
                             "Room Width/Length must be numbers.",
@@ -652,7 +674,7 @@ public class NewDesignWizardPage extends JPanel {
     private JLabel label(String t) {
         JLabel l = new JLabel(t);
         l.setForeground(UiKit.TEXT);
-        l.setFont(l.getFont().deriveFont(Font.PLAIN, 12f));
+        l.setFont(UiKit.scaled(l, Font.PLAIN, 0.95f));
         return l;
     }
 
@@ -662,104 +684,127 @@ public class NewDesignWizardPage extends JPanel {
         return field;
     }
 
-    private JComponent fieldBlock(String label, JComponent field) {
-        JPanel b = new JPanel();
+    private JComponent fieldBlock(String labelStr, JComponent field) {
+        JPanel b = new JPanel(new GridBagLayout());
         b.setOpaque(false);
-        b.setLayout(new BoxLayout(b, BoxLayout.Y_AXIS));
-        b.add(label(label));
-        b.add(Box.createVerticalStrut(6));
-        b.add(field);
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 16);
+        
+        JLabel l = label(labelStr);
+        l.setPreferredSize(new Dimension(160, 20));
+        l.setMinimumSize(new Dimension(160, 20));
+        
+        gbc.weightx = 0;
+        b.add(l, gbc);
+        
+        gbc.weightx = 1.0;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        b.add(field, gbc);
+        
         return b;
     }
 
-    private JComponent dropdownBlock(String label, JComponent dropdown) {
-        JPanel b = new JPanel();
-        b.setOpaque(false);
-        b.setLayout(new BoxLayout(b, BoxLayout.Y_AXIS));
-        b.add(label(label));
-        b.add(Box.createVerticalStrut(6));
-        b.add(dropdown);
-        return b;
+    private JComponent dropdownBlock(String labelStr, JComponent dropdown) {
+        UiKit.styleDropdown((JComboBox<?>) dropdown);
+        return fieldBlock(labelStr, dropdown);
     }
 
-    private JComponent textAreaBlock(String label, String placeholder, JTextArea area) {
-        JPanel b = new JPanel();
+    private JComponent textAreaBlock(String labelStr, String placeholder, JTextArea area) {
+        JPanel b = new JPanel(new GridBagLayout());
         b.setOpaque(false);
-        b.setLayout(new BoxLayout(b, BoxLayout.Y_AXIS));
-        b.add(label(label));
-        b.add(Box.createVerticalStrut(6));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.insets = new Insets(8, 0, 0, 16);
+
+        JLabel l = label(labelStr);
+        l.setPreferredSize(new Dimension(160, 20));
+        l.setMinimumSize(new Dimension(160, 20));
+
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        b.add(l, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 0);
 
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        area.setFont(area.getFont().deriveFont(13f));
+        area.setFont(UiKit.scaled(area, Font.PLAIN, 1.00f));
         area.setBorder(new EmptyBorder(10, 12, 10, 12));
-        area.setForeground(new Color(0x111827));
+        area.setForeground(UiKit.TEXT);
+        area.setBackground(UiKit.WHITE);
+        area.setCaretColor(UiKit.TEXT);
+        area.setOpaque(true);
 
         JScrollPane sp = new JScrollPane(area);
         sp.setBorder(new LineBorder(UiKit.BORDER, 1, true));
-        sp.setPreferredSize(new Dimension(0, 120));
+        sp.setPreferredSize(new Dimension(200, 100));
+        sp.setMinimumSize(new Dimension(200, 100));
+        sp.setOpaque(true);
+        sp.setBackground(UiKit.WHITE);
+
+        b.add(sp, gbc);
 
         area.setText(placeholder);
-        area.setForeground(new Color(0x9CA3AF));
+        area.setForeground(placeholderColor());
         area.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override public void focusGained(java.awt.event.FocusEvent e) {
                 if (placeholder.equals(area.getText())) {
                     area.setText("");
-                    area.setForeground(new Color(0x111827));
+                    area.setForeground(UiKit.TEXT);
                 }
             }
             @Override public void focusLost(java.awt.event.FocusEvent e) {
                 if (area.getText().trim().isEmpty()) {
                     area.setText(placeholder);
-                    area.setForeground(new Color(0x9CA3AF));
+                    area.setForeground(placeholderColor());
                 }
             }
         });
-
-        b.add(sp);
-
-        JLabel helper = new JLabel("Optional: Add special requirements, preferences, or important details");
-        helper.setForeground(UiKit.MUTED);
-        helper.setFont(helper.getFont().deriveFont(11.2f));
-        helper.setBorder(new EmptyBorder(6, 0, 0, 0));
-        b.add(helper);
 
         return b;
     }
 
     private void styleTextField(JTextField tf) {
-        tf.setFont(tf.getFont().deriveFont(13f));
+        tf.setFont(UiKit.scaled(tf, Font.PLAIN, 1.00f));
         tf.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(10, 12, 10, 12)
         ));
-        tf.setBackground(Color.WHITE);
-        tf.setForeground(new Color(0x111827));
+        tf.setBackground(UiKit.WHITE);
+        tf.setForeground(UiKit.TEXT);
+        tf.setCaretColor(UiKit.TEXT);
         tf.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
     }
 
     private void setPlaceholder(JTextField tf, String placeholder) {
         tf.setText(placeholder);
-        tf.setForeground(new Color(0x9CA3AF));
+        tf.setForeground(placeholderColor());
 
         tf.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override public void focusGained(java.awt.event.FocusEvent e) {
                 if (placeholder.equals(tf.getText())) {
                     tf.setText("");
-                    tf.setForeground(new Color(0x111827));
+                    tf.setForeground(UiKit.TEXT);
                 }
             }
             @Override public void focusLost(java.awt.event.FocusEvent e) {
                 if (tf.getText().trim().isEmpty()) {
                     tf.setText(placeholder);
-                    tf.setForeground(new Color(0x9CA3AF));
+                    tf.setForeground(placeholderColor());
                 }
             }
         });
     }
 
     private void styleNavButton(JButton b) {
-        b.setFont(b.getFont().deriveFont(Font.BOLD, 12.2f));
+        b.setFont(UiKit.scaled(b, Font.BOLD, 1.00f));
         b.setBorder(new EmptyBorder(10, 14, 10, 14));
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
@@ -767,7 +812,7 @@ public class NewDesignWizardPage extends JPanel {
     private JComponent colorDot(Color c) {
         UiKit.RoundedPanel dot = new UiKit.RoundedPanel(999, c);
         dot.setPreferredSize(new Dimension(18, 18));
-        dot.setBorderPaint(new Color(0xE5E7EB));
+        dot.setBorderPaint(isHighContrast() ? UiKit.BORDER : new Color(0xE5E7EB));
         return dot;
     }
 
@@ -790,44 +835,70 @@ public class NewDesignWizardPage extends JPanel {
         private void rebuild() {
             removeAll();
             add(stepItem(1, "Design Info"));
+            add(line(1));
             add(stepItem(2, "Dimensions"));
+            add(line(2));
             add(stepItem(3, "Room Shape"));
+            add(line(3));
             add(stepItem(4, "Color Scheme"));
             revalidate();
             repaint();
         }
 
+        private JComponent line(int afterStep) {
+            JPanel p = new JPanel(new GridBagLayout());
+            p.setOpaque(false);
+            
+            boolean isPassed = afterStep < this.active;
+            Color c = isPassed ? UiKit.PRIMARY : (isHighContrast() ? UiKit.BORDER : new Color(0xE5E7EB));
+            
+            JPanel line = new JPanel();
+            line.setBackground(c);
+            line.setPreferredSize(new Dimension(40, 2));
+            
+            p.add(line);
+            return p;
+        }
+
         private JComponent stepItem(int number, String label) {
-            JPanel p = new JPanel(new BorderLayout(10, 0));
+            JPanel p = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
             p.setOpaque(false);
 
             boolean done = number < active;
             boolean isActive = number == active;
 
-            UiKit.RoundedPanel circle = new UiKit.RoundedPanel(
-                    999,
-                    isActive ? UiKit.PRIMARY : new Color(0xE5E7EB)
-            );
-            circle.setPreferredSize(new Dimension(28, 28));
+            Color circleFill = isActive ? UiKit.PRIMARY : (done ? UiKit.PRIMARY_DARK : (isHighContrast() ? UiKit.WHITE : new Color(0xF3F4F6)));
+
+            UiKit.RoundedPanel circle = new UiKit.RoundedPanel(999, circleFill);
+            circle.setBorderPaint(isHighContrast() ? UiKit.BORDER : (isActive ? UiKit.PRIMARY : null));
+            circle.setPreferredSize(new Dimension(30, 30));
             circle.setLayout(new GridBagLayout());
 
             JLabel n = new JLabel(done ? "✓" : String.valueOf(number));
-            n.setForeground(isActive ? Color.WHITE : new Color(0x6B7280));
-            n.setFont(n.getFont().deriveFont(Font.BOLD, 12f));
+            n.setForeground((isActive || done) ? Color.WHITE : (isHighContrast() ? UiKit.TEXT : new Color(0x6B7280)));
+            n.setFont(UiKit.scaled(n, Font.BOLD, 0.95f));
             circle.add(n);
 
             JLabel t = new JLabel(label);
-            t.setForeground(isActive ? UiKit.TEXT : UiKit.MUTED);
-            t.setFont(t.getFont().deriveFont(isActive ? Font.BOLD : Font.PLAIN, 12f));
+            t.setForeground(isActive ? UiKit.TEXT : (done ? UiKit.PRIMARY_DARK : subMuted()));
+            t.setFont(UiKit.scaled(t, isActive ? Font.BOLD : Font.PLAIN, 0.95f));
 
-            JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-            left.setOpaque(false);
-            left.add(circle);
-
-            p.add(left, BorderLayout.WEST);
-            p.add(t, BorderLayout.CENTER);
+            p.add(circle);
+            p.add(t);
 
             return p;
         }
+    }
+
+    private void applyDefaultUnitFromSettings() {
+        if (settingsRepo == null) return;
+
+        var s = settingsRepo.get();
+        String code = (s == null) ? "cm" : s.getDefaultUnit();
+        if (code == null) code = "cm";
+
+        if ("ft".equalsIgnoreCase(code)) unit.setSelectedItem("ft");
+        else if ("m".equalsIgnoreCase(code)) unit.setSelectedItem("m");
+        else unit.setSelectedItem("cm");
     }
 }

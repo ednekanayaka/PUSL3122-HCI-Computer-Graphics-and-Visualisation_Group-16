@@ -20,21 +20,31 @@ import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * 3D Visual Page – REAL simple raster renderer (Java2D).
+ * 3D Visual Page – simple Java2D raster renderer.
  *
- * - Reads current Design from AppState
- * - 2D rectangles -> 3D cuboids
- * - Perspective projection + raster fillPolygon
- * - Painter's algorithm (depth sort)
- * - Orbit (drag) + zoom (wheel)
- * - Uses FurnitureItem colorHex + shadingPercent
+ * ✅ Step 1 enforcement:
+ * - NO silent auto-create designs.
+ * - If no design is selected -> show empty state:
+ *   "Select or create a design first" + buttons Library / New Design.
+ *
+ * ✅ Other (existing) fixes preserved:
+ * - Safe getters for Design.layoutX/layoutY/layoutWidth/layoutHeight (handles primitive double OR Double)
+ * - Safe getters for Furniture rotation (getRotation / getRotationDeg / etc)
+ * - Converts furniture (canvas coords) -> room-local coords for correct 3D placement
+ * - Room size prefers layout bounds (or fallback)
+ *
+ * ✅ FIX (This update):
+ * - 3D room now respects L-Shape (same cut-out logic used by RoomCanvas)
+ * - 3D floor becomes 2 quads for L-Shape, and walls follow L perimeter
+ * - Rectangle rooms now get full perimeter walls (4 sides)
  */
 public class Visual3DPage extends JPanel {
 
     @SuppressWarnings("unused")
-    private final AppFrame frame; // kept for consistency with other pages
+    private final AppFrame frame;
     private final Router router;
     private final AppState appState;
 
@@ -42,6 +52,7 @@ public class Visual3DPage extends JPanel {
     private final JPopupMenu lightingMenu = new JPopupMenu();
 
     private String lightingPreset = "Day";
+    private JButton lightingDropdownBtn;
 
     private final RendererPanel renderer;
 
@@ -56,10 +67,95 @@ public class Visual3DPage extends JPanel {
 
         renderer = new RendererPanel();
 
+        // ✅ Build menu once (safe even if design is not selected yet)
+        buildLightingMenu();
+
+        // ✅ Build the correct UI for current state (design selected or not)
+        rebuildUI();
+
+        // ✅ Refresh on navigation (CRITICAL - this page instance is created once in ShellScreen)
+        try {
+            if (router != null) {
+                router.addListener(key -> {
+                    if (ScreenKeys.VIEW_3D.equals(key)) {
+                        rebuildUI();
+                    }
+                });
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    /** ✅ Rebuild screen depending on whether a design is selected */
+    private void rebuildUI() {
+        removeAll();
+
+        if (getCurrentDesign() == null) {
+            add(buildNoDesignState(), BorderLayout.CENTER);
+            revalidate();
+            repaint();
+            return;
+        }
+
         add(buildTopBar(), BorderLayout.NORTH);
         add(buildMain(), BorderLayout.CENTER);
 
-        buildLightingMenu();
+        revalidate();
+        repaint();
+    }
+
+    /* ========================== EMPTY STATE ========================== */
+
+    private JComponent buildNoDesignState() {
+        JPanel wrap = new JPanel(new GridBagLayout());
+        wrap.setOpaque(false);
+
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, UiKit.WHITE);
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
+        card.setPreferredSize(new Dimension(560, 240));
+
+        JLabel title = new JLabel("Select or create a design first");
+        title.setForeground(UiKit.TEXT);
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel sub = new JLabel("<html>The 3D view renders the <b>currently selected design</b>.<br/>Go to the Design Library to pick one, or create a new design.</html>");
+        sub.setForeground(UiKit.MUTED);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        btnRow.setOpaque(false);
+        btnRow.setBorder(new EmptyBorder(16, 0, 0, 0));
+        btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton goLibrary = UiKit.primaryButton("Go to Design Library");
+        goLibrary.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
+        });
+
+        JButton createNew = UiKit.ghostButton("Create New Design");
+        createNew.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.NEW_DESIGN);
+        });
+
+        JButton backPlanner = UiKit.ghostButton("Back to Planner");
+        backPlanner.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+        });
+
+        btnRow.add(goLibrary);
+        btnRow.add(createNew);
+        btnRow.add(backPlanner);
+
+        card.add(title);
+        card.add(sub);
+        card.add(btnRow);
+
+        wrap.add(card);
+        return wrap;
     }
 
     /* ========================== TOP BAR ========================== */
@@ -74,7 +170,9 @@ public class Visual3DPage extends JPanel {
         left.setOpaque(false);
 
         JButton back = darkButton("←  Back to 2D");
-        back.addActionListener(e -> router.show(ScreenKeys.PLANNER_2D));
+        back.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+        });
 
         JLabel saved = pill("✓  Saved", new Color(0x064E3B), new Color(0x34D399));
 
@@ -111,8 +209,14 @@ public class Visual3DPage extends JPanel {
     }
 
     private String getDesignTitleForHeader() {
-        Design d = appState.getCurrentDesignOrNull();
-        String name = (d == null || d.getName() == null || d.getName().isBlank()) ? "Untitled Design" : d.getName();
+        Design d = getCurrentDesign();
+        String name = "No design selected";
+        if (d != null) {
+            try {
+                String n = d.getName();
+                if (n != null && !n.isBlank()) name = n;
+            } catch (Throwable ignored) { }
+        }
         return name + " – 3D View";
     }
 
@@ -180,12 +284,12 @@ public class Visual3DPage extends JPanel {
         t.setForeground(new Color(0xD1D5DB));
         t.setFont(t.getFont().deriveFont(Font.BOLD, 11.2f));
 
-        JButton dropdown = darkButton(" " + lightingPreset + "  ▾");
-        dropdown.setHorizontalAlignment(SwingConstants.LEFT);
-        dropdown.addActionListener(e -> showLightingMenu(dropdown));
+        lightingDropdownBtn = darkButton(" " + lightingPreset + "  ▾");
+        lightingDropdownBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        lightingDropdownBtn.addActionListener(e -> showLightingMenu(lightingDropdownBtn));
 
         lightingCard.add(t, BorderLayout.NORTH);
-        lightingCard.add(dropdown, BorderLayout.CENTER);
+        lightingCard.add(lightingDropdownBtn, BorderLayout.CENTER);
 
         toast.setOpaque(true);
         toast.setBackground(new Color(0x111827));
@@ -218,29 +322,16 @@ public class Visual3DPage extends JPanel {
         btns.setOpaque(false);
 
         JButton reset = iconDockButton("⟳", "Reset camera");
-        reset.addActionListener(e -> {
-            renderer.resetCamera();
-            showToast();
-        });
+        reset.addActionListener(e -> { renderer.resetCamera(); showToast(); });
 
         JButton center = iconDockButton("✥", "Center scene");
-        center.addActionListener(e -> {
-            renderer.centerScene();
-            showToast();
-        });
+        center.addActionListener(e -> { renderer.centerScene(); showToast(); });
 
         JButton zoom = iconDockButton("🔍", "Zoom to fit");
-        zoom.addActionListener(e -> {
-            renderer.zoomToFit();
-            showToast();
-        });
+        zoom.addActionListener(e -> { renderer.zoomToFit(); showToast(); });
 
         JButton home = iconDockButton("⌂", "Default view");
-        home.addActionListener(e -> {
-            renderer.resetCamera();
-            renderer.zoomToFit();
-            showToast();
-        });
+        home.addActionListener(e -> { renderer.resetCamera(); renderer.zoomToFit(); showToast(); });
 
         btns.add(reset);
         btns.add(center);
@@ -290,6 +381,7 @@ public class Visual3DPage extends JPanel {
 
     private void setLighting(String preset) {
         lightingPreset = preset;
+        if (lightingDropdownBtn != null) lightingDropdownBtn.setText(" " + lightingPreset + "  ▾");
         renderer.setLightingPreset(preset);
         showToast();
         repaint();
@@ -302,17 +394,44 @@ public class Visual3DPage extends JPanel {
         t.start();
     }
 
+    /* ========================== DESIGN LOOKUP (Step 1 safe) ========================== */
+
+    private Design getCurrentDesign() {
+        if (appState == null) return null;
+        // ✅ Step 1: NEVER auto-create here
+        try {
+            return appState.getCurrentDesign();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /* ========================== SAFE LAYOUT GETTERS ========================== */
+
+    private static Double getLayoutW(Design d) { return readDouble(d, "getLayoutWidth"); }
+    private static Double getLayoutH(Design d) { return readDouble(d, "getLayoutHeight"); }
+
+    private static Double readDouble(Object obj, String method) {
+        if (obj == null) return null;
+        try {
+            Object v = obj.getClass().getMethod(method).invoke(obj);
+            if (v == null) return null;
+            if (v instanceof Number) return ((Number) v).doubleValue();
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /* ========================== RENDERER PANEL ========================== */
 
     private class RendererPanel extends JPanel {
 
-        // Orbit camera params
         private double yaw = Math.toRadians(35);
         private double pitch = Math.toRadians(-22);
-        private double dist = 820;
+        private double dist = 600;
 
         private Vec3 sceneCenter = new Vec3(0, 0, 0);
-
         private Point lastMouse = null;
 
         private String preset = "Day";
@@ -388,10 +507,26 @@ public class Visual3DPage extends JPanel {
         }
 
         void zoomToFit() {
-            Bounds b = computeSceneBounds();
-            double maxSpan = Math.max(b.w, b.d);
-            if (maxSpan <= 1) maxSpan = 600;
-            dist = clamp(maxSpan * 1.25, 260, 2600);
+            Design d = getCurrentDesign();
+            if (d == null) return;
+
+            double roomW = 520;
+            double roomD = 520;
+
+            Double lw = getLayoutW(d);
+            Double lh = getLayoutH(d);
+
+            if (lw != null && lh != null) {
+                roomW = Math.max(520, lw);
+                roomD = Math.max(520, lh);
+            } else {
+                Bounds b = computeSceneBounds();
+                roomW = Math.max(520, b.w);
+                roomD = Math.max(520, b.d);
+            }
+
+            double maxSpan = Math.max(roomW, roomD);
+            dist = clamp(maxSpan * 2.0, 100, 5000);
             repaint();
         }
 
@@ -403,7 +538,7 @@ public class Visual3DPage extends JPanel {
                 if (res != JFileChooser.APPROVE_OPTION) return;
 
                 java.io.File f = fc.getSelectedFile();
-                String name = f.getName().toLowerCase();
+                String name = f.getName().toLowerCase(Locale.ENGLISH);
                 if (!name.endsWith(".png")) f = new java.io.File(f.getParentFile(), f.getName() + ".png");
 
                 BufferedImage img = new BufferedImage(getWidth(), getHeight(), BufferedImage.TYPE_INT_ARGB);
@@ -430,6 +565,18 @@ public class Visual3DPage extends JPanel {
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
+
+            // ✅ If design disappears (deleted / unselected), show empty state safely
+            if (getCurrentDesign() == null) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setColor(Color.BLACK);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.setColor(new Color(255, 255, 255, 180));
+                g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 12f));
+                g2.drawString("No design selected. Go to Design Library.", 18, 24);
+                g2.dispose();
+                return;
+            }
 
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -479,79 +626,101 @@ public class Visual3DPage extends JPanel {
             g2.drawString("Drag: orbit   Wheel: zoom   R: reset   F: fit", 16, h - 16);
         }
 
+        /* ========================== ROOM SHAPE HELPERS (3D) ========================== */
+
+        private boolean isLShape(RoomSpec spec) {
+            if (spec == null) return false;
+            String s = spec.getShape();
+            if (s == null) return false;
+            return "L-Shape".equalsIgnoreCase(s.trim())
+                    && spec.getLCutWidth() > 0
+                    && spec.getLCutLength() > 0;
+        }
+
+
         private List<Face> buildSceneFaces() {
             computeSceneCenter();
             List<Face> faces = new ArrayList<>();
 
-            Bounds b = computeSceneBounds();
+            Design d = getCurrentDesign();
+            if (d == null) return faces;
 
-            Design d = appState.getCurrentDesignOrNull();
-            RoomSpec spec = (d == null) ? null : d.getRoomSpec();
+            RoomSpec spec = d.getRoomSpec();
 
-            double roomW = b.w;
-            double roomD = b.d;
-
-            if (spec != null && spec.getWidth() > 0 && spec.getLength() > 0) {
-                double ratio = spec.getWidth() / Math.max(0.0001, spec.getLength());
-                if (ratio > 0.2 && ratio < 5) {
-                    if (roomW >= roomD) roomD = roomW / ratio;
-                    else roomW = roomD * ratio;
+            double roomW = 120;
+            double roomD = 120;
+            if (spec != null) {
+                double rw = spec.getWidth();
+                double rl = spec.getLength();
+                String unit = spec.getUnit();
+                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
+                    rw *= 12.0;
+                    rl *= 12.0;
+                } else if ("m".equalsIgnoreCase(unit.trim())) {
+                    rw *= 39.3701;
+                    rl *= 39.3701;
                 }
+                roomW = rw;
+                roomD = rl;
             }
 
             double floorY = 0;
-            double wallH = Math.max(260, Math.min(520, Math.max(roomW, roomD) * 0.45));
+            double wallH = 96; // 8ft standard height
 
             double x0 = sceneCenter.x - roomW / 2;
             double x1 = sceneCenter.x + roomW / 2;
             double z0 = sceneCenter.z - roomD / 2;
             double z1 = sceneCenter.z + roomD / 2;
 
-            // Apply scheme colors (floor + walls) with lighting preset
             Color[] schemeCols = schemeColors(spec, preset);
             Color floorCol = schemeCols[0];
             Color wallCol = schemeCols[1];
 
-            if (spec != null && "L-Shape".equalsIgnoreCase(String.valueOf(spec.getShape()))
-                    && spec.getLCutWidth() > 0 && spec.getLCutLength() > 0
-                    && spec.getWidth() > 0 && spec.getLength() > 0) {
+            // ✅ FIX: Build correct room floor + walls for L-Shape (same cut-out logic as RoomCanvas)
+            if (spec != null && isLShape(spec)) {
+                String unit = spec.getUnit();
+                double xCut, zCut;
+                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
+                    xCut = x1 - spec.getLCutWidth() * 12.0;
+                    zCut = z0 + spec.getLCutLength() * 12.0;
+                } else if ("m".equalsIgnoreCase(unit.trim())) {
+                    xCut = x1 - spec.getLCutWidth() * 39.3701;
+                    zCut = z0 + spec.getLCutLength() * 39.3701;
+                } else {
+                    xCut = x1 - (int)Math.round(roomW * (spec.getLCutWidth() / spec.getWidth()));
+                    zCut = z0 + (int)Math.round(roomD * (spec.getLCutLength() / spec.getLength()));
+                }
 
-                double cutW = roomW * (spec.getLCutWidth() / Math.max(0.0001, spec.getWidth()));
-                double cutD = roomD * (spec.getLCutLength() / Math.max(0.0001, spec.getLength()));
-
-                // Clamp to avoid invalid geometry
-                cutW = Math.max(1, Math.min(roomW - 1, cutW));
-                cutD = Math.max(1, Math.min(roomD - 1, cutD));
-
-                // L-Shape = union of 2 rectangles:
-                // Rect A: full width, depth = (roomD - cutD), from z0+cutD to z1
+                // Floor = 2 quads:
+                // 1) Left slab (full depth)
                 faces.add(faceQuad(
-                        new Vec3(x0, floorY, z0 + cutD),
-                        new Vec3(x1, floorY, z0 + cutD),
-                        new Vec3(x1, floorY, z1),
+                        new Vec3(x0, floorY, z0),
+                        new Vec3(xCut, floorY, z0),
+                        new Vec3(xCut, floorY, z1),
                         new Vec3(x0, floorY, z1),
                         floorCol
                 ));
 
-                // Rect B: width = (roomW - cutW), depth = cutD, from z0 to z0+cutD
+                // 2) Bottom-right slab (below the cut)
                 faces.add(faceQuad(
-                        new Vec3(x0, floorY, z0),
-                        new Vec3(x1 - cutW, floorY, z0),
-                        new Vec3(x1 - cutW, floorY, z0 + cutD),
-                        new Vec3(x0, floorY, z0 + cutD),
+                        new Vec3(xCut, floorY, zCut),
+                        new Vec3(x1,   floorY, zCut),
+                        new Vec3(x1,   floorY, z1),
+                        new Vec3(xCut, floorY, z1),
                         floorCol
                 ));
 
-                // Walls along L perimeter (TOP_RIGHT cutout)
-                addWallSegment(faces, x0, z0, x1 - cutW, z0, floorY, wallH, wallCol);             // top
-                addWallSegment(faces, x1 - cutW, z0, x1 - cutW, z0 + cutD, floorY, wallH, wallCol); // inner vertical
-                addWallSegment(faces, x1 - cutW, z0 + cutD, x1, z0 + cutD, floorY, wallH, wallCol); // inner horizontal
-                addWallSegment(faces, x1, z0 + cutD, x1, z1, floorY, wallH, wallCol);             // right
-                addWallSegment(faces, x1, z1, x0, z1, floorY, wallH, wallCol);                    // bottom
-                addWallSegment(faces, x0, z1, x0, z0, floorY, wallH, wallCol.darker());           // left
+                // Walls follow L perimeter:
+                // (x0,z0)->(xCut,z0)->(xCut,zCut)->(x1,zCut)->(x1,z1)->(x0,z1)->(x0,z0)
+                addWallSegment(faces, x0,   z0,   xCut, z0,   floorY, wallH, wallCol);
+                addWallSegment(faces, xCut, z0,   xCut, zCut, floorY, wallH, wallCol.darker());
+                addWallSegment(faces, xCut, zCut, x1,   zCut, floorY, wallH, wallCol);
+                addWallSegment(faces, x1,   zCut, x1,   z1,   floorY, wallH, wallCol.darker());
+                addWallSegment(faces, x1,   z1,   x0,   z1,   floorY, wallH, wallCol);
+                addWallSegment(faces, x0,   z1,   x0,   z0,   floorY, wallH, wallCol.darker());
 
             } else {
-                // Default rectangle
+                // Rectangle room (existing behaviour, but now with full perimeter walls)
                 faces.add(faceQuad(
                         new Vec3(x0, floorY, z0),
                         new Vec3(x1, floorY, z0),
@@ -560,76 +729,192 @@ public class Visual3DPage extends JPanel {
                         floorCol
                 ));
 
-                // Basic walls (you can extend later)
-                addWallSegment(faces, x0, z0, x1, z0, floorY, wallH, wallCol);         // top
-                addWallSegment(faces, x0, z1, x0, z0, floorY, wallH, wallCol.darker()); // left
+                addWallSegment(faces, x0, z0, x1, z0, floorY, wallH, wallCol);
+                addWallSegment(faces, x1, z0, x1, z1, floorY, wallH, wallCol.darker());
+                addWallSegment(faces, x1, z1, x0, z1, floorY, wallH, wallCol);
+                addWallSegment(faces, x0, z1, x0, z0, floorY, wallH, wallCol.darker());
             }
 
-            List<FurnitureItem> items = (d == null) ? List.of() : safeItems(d.getItems());
-            for (FurnitureItem it : items) {
-                faces.addAll(buildFurnitureFaces(it));
-            }
+            List<FurnitureItem> items = (d.getItems() == null) ? List.of() : d.getItems();
+            for (FurnitureItem it : items) faces.addAll(buildFurnitureFaces(it));
 
             return faces;
-        }
-
-        private List<FurnitureItem> safeItems(List<FurnitureItem> items) {
-            return (items == null) ? List.of() : items;
         }
 
         private List<Face> buildFurnitureFaces(FurnitureItem it) {
             List<Face> faces = new ArrayList<>();
 
-            double x = it.getX();
-            double z = it.getY();
-            double w = Math.max(10, it.getW());
-            double d = Math.max(10, it.getH());
+            double w = Math.max(10, safeW(it));
+            double d = Math.max(10, safeH(it));
+            double rot = Math.toRadians(safeRotationDeg(it));
 
-            double h = 60;
-            String kind = (it.getKind() == null) ? "" : it.getKind().toUpperCase();
-            if (kind.contains("TABLE")) h = 52;
-            if (kind.contains("CHAIR")) h = 72;
-
-            if (it.getId() != null && it.getId().equals(appState.getSelectedItemId())) {
-                h *= 1.08;
-            }
-
-            Color base = parseHex(it.getColorHex(), new Color(0x3B82F6));
-            double shadeMul = 0.60 + (clamp(it.getShadingPercent(), 0, 100) / 100.0) * 0.70;
+            Color base = parseHex(safeColorHex(it), new Color(0x3B82F6));
+            double shadeMul = 0.60 + (clamp(safeShading(it), 0, 100) / 100.0) * 0.70;
             base = applyBrightness(base, shadeMul);
 
-            String material = (it.getMaterial() == null) ? "" : it.getMaterial().toLowerCase();
-            double gloss = 0.0;
-            if (material.contains("gloss")) gloss = 0.18;
-            else if (material.contains("satin")) gloss = 0.10;
+            Design design = getCurrentDesign();
+            if (design == null) return faces;
 
-            Vec3 c = new Vec3(x + w / 2, 0, z + d / 2);
+            RoomSpec spec = design.getRoomSpec();
+            double roomW = 120;
+            double roomD = 120;
+            if (spec != null) {
+                double rw = spec.getWidth();
+                double rl = spec.getLength();
+                String unit = spec.getUnit();
+                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
+                    rw *= 12.0;
+                    rl *= 12.0;
+                } else if ("m".equalsIgnoreCase(unit.trim())) {
+                    rw *= 39.3701;
+                    rl *= 39.3701;
+                }
+                roomW = rw;
+                roomD = rl;
+            }
 
+            double lx = safeX(it);
+            double lz = safeY(it);
+
+            Vec3 c = new Vec3(
+                    (lx + w / 2.0) - roomW / 2.0 + sceneCenter.x,
+                    0,
+                    (lz + d / 2.0) - roomD / 2.0 + sceneCenter.z
+            );
+
+            String kind = safeKind(it);
+
+            if ("TABLE_ROUND".equals(kind)) {
+                buildRoundTable(faces, c, w, d, rot, base);
+            } else if ("TABLE_RECT".equals(kind)) {
+                buildRectTable(faces, c, w, d, rot, base);
+            } else if ("CHAIR".equals(kind)) {
+                buildChair(faces, c, w, d, rot, base);
+            } else {
+                addBox(faces, c, w, 60, d, rot, base);
+            }
+
+            return faces;
+        }
+
+        private void buildChair(List<Face> faces, Vec3 c, double w, double d, double rot, Color color) {
+            double seatH = 34;
+            double seatThick = 4;
+            double backH = 38;
+            double legDim = Math.min(w, d) * 0.12;
+            Color legCol = color.darker();
+
+            double lx = w / 2 - legDim / 2;
+            double lz = d / 2 - legDim / 2;
+
+            addBoxWrapper(faces, c, -lx, 0, -lz, legDim, seatH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, -lz, legDim, seatH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, +lz, legDim, seatH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, -lx, 0, +lz, legDim, seatH, legDim, rot, legCol);
+
+            addBoxWrapper(faces, c, 0, seatH, 0, w, seatThick, d, rot, color);
+
+            double backThick = 5;
+            addBoxWrapper(faces, c, 0, seatH + seatThick, -(d / 2 - backThick / 2), w, backH, backThick, rot, color);
+        }
+
+        private void buildRectTable(List<Face> faces, Vec3 c, double w, double d, double rot, Color color) {
+            double tableH = 50;
+            double topThick = 4;
+            double legDim = Math.min(w, d) * 0.08;
+            Color legCol = color.darker();
+
+            double lx = w / 2 - legDim;
+            double lz = d / 2 - legDim;
+
+            addBoxWrapper(faces, c, -lx, 0, -lz, legDim, tableH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, -lz, legDim, tableH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, +lz, legDim, tableH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, -lx, 0, +lz, legDim, tableH, legDim, rot, legCol);
+
+            addBoxWrapper(faces, c, 0, tableH, 0, w, topThick, d, rot, color);
+        }
+
+        private void buildRoundTable(List<Face> faces, Vec3 c, double w, double d, double rot, Color color) {
+            double tableH = 50;
+            double topThick = 4;
+            double radius = Math.min(w, d) / 2.0;
+
+            double pillarR = radius * 0.15;
+            addPrismWrapper(faces, c, 0, 0, 0, pillarR, tableH, rot, color.darker());
+            addPrismWrapper(faces, c, 0, 0, 0, radius * 0.4, 2, rot, color.darker());
+            addPrismWrapper(faces, c, 0, tableH, 0, radius, topThick, rot, color);
+        }
+
+        private void addBoxWrapper(List<Face> faces, Vec3 c, double offX, double offY, double offZ,
+                                   double w, double h, double d, double rot, Color color) {
+            Vec3 off = rotY(new Vec3(offX, 0, offZ), rot);
+            Vec3 finalC = new Vec3(c.x + off.x, c.y + offY, c.z + off.z);
+            addBox(faces, finalC, w, h, d, rot, color);
+        }
+
+        private void addPrismWrapper(List<Face> faces, Vec3 c, double offX, double offY, double offZ,
+                                     double r, double h, double rot, Color color) {
+            Vec3 off = rotY(new Vec3(offX, 0, offZ), rot);
+            Vec3 finalC = new Vec3(c.x + off.x, c.y + offY, c.z + off.z);
+            addPrism(faces, finalC, r, h, rot, color);
+        }
+
+        private void addBox(List<Face> faces, Vec3 c, double w, double h, double d, double rot, Color color) {
             double rx = w / 2;
             double rz = d / 2;
-            double rot = Math.toRadians(it.getRotation());
 
-            Vec3 p000 = rotY(new Vec3(-rx, 0, -rz), rot).add(c);
-            Vec3 p100 = rotY(new Vec3(+rx, 0, -rz), rot).add(c);
-            Vec3 p110 = rotY(new Vec3(+rx, 0, +rz), rot).add(c);
-            Vec3 p010 = rotY(new Vec3(-rx, 0, +rz), rot).add(c);
+            Vec3 b0 = new Vec3(-rx, 0, -rz);
+            Vec3 b1 = new Vec3(+rx, 0, -rz);
+            Vec3 b2 = new Vec3(+rx, 0, +rz);
+            Vec3 b3 = new Vec3(-rx, 0, +rz);
 
-            Vec3 p001 = rotY(new Vec3(-rx, h, -rz), rot).add(c);
-            Vec3 p101 = rotY(new Vec3(+rx, h, -rz), rot).add(c);
-            Vec3 p111 = rotY(new Vec3(+rx, h, +rz), rot).add(c);
-            Vec3 p011 = rotY(new Vec3(-rx, h, +rz), rot).add(c);
+            Vec3 t0 = new Vec3(-rx, h, -rz);
+            Vec3 t1 = new Vec3(+rx, h, -rz);
+            Vec3 t2 = new Vec3(+rx, h, +rz);
+            Vec3 t3 = new Vec3(-rx, h, +rz);
 
+            Vec3[] v = new Vec3[]{b0, b1, b2, b3, t0, t1, t2, t3};
+            for (int i = 0; i < 8; i++) v[i] = rotY(v[i], rot).add(c);
+
+            Vec3 lightDir = getLightDir();
+            double gloss = 0.05;
+
+            faces.add(faceQuadWithLighting(v[4], v[5], v[6], v[7], color, lightDir, 1.0 + gloss));
+            faces.add(faceQuadWithLighting(v[0], v[1], v[5], v[4], color, lightDir, 0.72));
+            faces.add(faceQuadWithLighting(v[1], v[2], v[6], v[5], color, lightDir, 0.80));
+            faces.add(faceQuadWithLighting(v[2], v[3], v[7], v[6], color, lightDir, 0.86));
+            faces.add(faceQuadWithLighting(v[3], v[0], v[4], v[7], color, lightDir, 0.76));
+        }
+
+        private void addPrism(List<Face> faces, Vec3 c, double r, double h, double rot, Color color) {
+            int sides = 12;
+            Vec3[] bot = new Vec3[sides];
+            Vec3[] top = new Vec3[sides];
+
+            for (int i = 0; i < sides; i++) {
+                double ang = (2.0 * Math.PI * i) / sides;
+                double lx = Math.cos(ang) * r;
+                double lz = Math.sin(ang) * r;
+                bot[i] = rotY(new Vec3(lx, 0, lz), rot).add(c);
+                top[i] = rotY(new Vec3(lx, h, lz), rot).add(c);
+            }
+
+            Vec3 lightDir = getLightDir();
+
+            faces.add(new Face(java.util.Arrays.asList(top), applyBrightness(color, 1.05), 0));
+
+            for (int i = 0; i < sides; i++) {
+                int next = (i + 1) % sides;
+                faces.add(faceQuadWithLighting(bot[i], bot[next], top[next], top[i], color, lightDir, 0.8));
+            }
+        }
+
+        private Vec3 getLightDir() {
             Vec3 lightDir = new Vec3(-0.35, 0.85, -0.35);
             if ("Night".equalsIgnoreCase(preset)) lightDir = new Vec3(-0.25, 0.60, -0.20);
             if ("Sunset".equalsIgnoreCase(preset)) lightDir = new Vec3(0.55, 0.75, -0.15);
-
-            faces.add(faceQuadWithLighting(p001, p101, p111, p011, base, lightDir, 1.00 + gloss));
-            faces.add(faceQuadWithLighting(p000, p010, p011, p001, base, lightDir, 0.72));
-            faces.add(faceQuadWithLighting(p100, p101, p111, p110, base, lightDir, 0.80));
-            faces.add(faceQuadWithLighting(p010, p110, p111, p011, base, lightDir, 0.86));
-            faces.add(faceQuadWithLighting(p000, p100, p101, p001, base, lightDir, 0.76));
-
-            return faces;
+            return lightDir;
         }
 
         private Face faceQuad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Color col) {
@@ -674,7 +959,6 @@ public class Visual3DPage extends JPanel {
                 }
 
                 if (!anyVisible) continue;
-
                 projected.add(new Face(camPts, f.color, depthSum / f.pts.size()));
             }
 
@@ -718,17 +1002,32 @@ public class Visual3DPage extends JPanel {
         }
 
         private void computeSceneCenter() {
+            Design d = getCurrentDesign();
+            if (d == null) return;
+
+            RoomSpec spec = d.getRoomSpec();
+            if (spec != null) {
+                double rw = spec.getWidth();
+                double rl = spec.getLength();
+                String unit = spec.getUnit();
+                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
+                    rw *= 12.0;
+                    rl *= 12.0;
+                } else if ("m".equalsIgnoreCase(unit.trim())) {
+                    rw *= 39.3701;
+                    rl *= 39.3701;
+                }
+                sceneCenter = new Vec3(rw / 2.0, 0, rl / 2.0);
+                return;
+            }
+
             Bounds b = computeSceneBounds();
             sceneCenter = new Vec3(b.cx, 0, b.cz);
         }
 
         private Bounds computeSceneBounds() {
-            Design d = appState.getCurrentDesignOrNull();
-            List<FurnitureItem> items = (d == null) ? List.of() : safeItems(d.getItems());
-
-            if (items.isEmpty()) {
-                return new Bounds(-300, -260, 600, 520);
-            }
+            Design d = getCurrentDesign();
+            List<FurnitureItem> items = (d == null || d.getItems() == null) ? List.of() : d.getItems();
 
             double minX = Double.POSITIVE_INFINITY;
             double minZ = Double.POSITIVE_INFINITY;
@@ -736,15 +1035,20 @@ public class Visual3DPage extends JPanel {
             double maxZ = Double.NEGATIVE_INFINITY;
 
             for (FurnitureItem it : items) {
-                double x0 = it.getX();
-                double z0 = it.getY();
-                double x1 = x0 + Math.max(10, it.getW());
-                double z1 = z0 + Math.max(10, it.getH());
+                double x0 = safeX(it);
+                double z0 = safeY(it);
+                double x1 = x0 + Math.max(10, safeW(it));
+                double z1 = z0 + Math.max(10, safeH(it));
 
                 minX = Math.min(minX, Math.min(x0, x1));
                 maxX = Math.max(maxX, Math.max(x0, x1));
                 minZ = Math.min(minZ, Math.min(z0, z1));
                 maxZ = Math.max(maxZ, Math.max(z0, z1));
+            }
+
+            if (minX == Double.POSITIVE_INFINITY) {
+                minX = -260; maxX = 260;
+                minZ = -260; maxZ = 260;
             }
 
             double pad = 180;
@@ -813,10 +1117,6 @@ public class Visual3DPage extends JPanel {
             return Math.max(lo, Math.min(hi, v));
         }
 
-        private double clamp(double v, int lo, int hi) {
-            return Math.max(lo, Math.min(hi, v));
-        }
-
         private int clampInt(long v, long lo, long hi) {
             long clamped = Math.max(lo, Math.min(hi, v));
             return (int) clamped;
@@ -835,7 +1135,6 @@ public class Visual3DPage extends JPanel {
         private void addWallSegment(List<Face> faces,
                                     double ax, double az, double bx, double bz,
                                     double floorY, double wallH, Color col) {
-            // Wall is a vertical quad from A->B
             faces.add(faceQuad(
                     new Vec3(ax, floorY, az),
                     new Vec3(bx, floorY, bz),
@@ -846,7 +1145,9 @@ public class Visual3DPage extends JPanel {
         }
 
         private Color[] schemeColors(RoomSpec spec, String preset) {
-            String scheme = (spec == null || spec.getColorScheme() == null) ? "neutral" : spec.getColorScheme().toLowerCase();
+            String scheme = (spec == null || spec.getColorScheme() == null)
+                    ? "neutral"
+                    : spec.getColorScheme().toLowerCase(Locale.ENGLISH);
 
             Color floor = new Color(40, 48, 70, 220);
             Color wall = new Color(24, 30, 46, 210);
@@ -865,21 +1166,20 @@ public class Visual3DPage extends JPanel {
                 wall = new Color(40, 30, 48, 210);
             }
 
-            // lighting preset tweak
             if ("Night".equalsIgnoreCase(preset)) {
                 floor = new Color(floor.getRed() / 2, floor.getGreen() / 2, floor.getBlue() / 2, floor.getAlpha());
                 wall = new Color(wall.getRed() / 2, wall.getGreen() / 2, wall.getBlue() / 2, wall.getAlpha());
             } else if ("Sunset".equalsIgnoreCase(preset)) {
                 floor = new Color(
-                        Math.min(255, (int) (floor.getRed() * 1.1)),
-                        Math.min(255, (int) (floor.getGreen() * 0.85)),
-                        Math.min(255, (int) (floor.getBlue() * 0.95)),
+                        Math.min(255, (int) (floor.getRed() * 1.10)),
+                        Math.min(255, (int) (floor.getGreen() * 0.92)),
+                        Math.min(255, (int) (floor.getBlue() * 0.92)),
                         floor.getAlpha()
                 );
                 wall = new Color(
-                        Math.min(255, (int) (wall.getRed() * 1.1)),
-                        Math.min(255, (int) (wall.getGreen() * 0.85)),
-                        Math.min(255, (int) (wall.getBlue() * 0.95)),
+                        Math.min(255, (int) (wall.getRed() * 1.18)),
+                        Math.min(255, (int) (wall.getGreen() * 0.90)),
+                        Math.min(255, (int) (wall.getBlue() * 0.85)),
                         wall.getAlpha()
                 );
             }
@@ -887,25 +1187,74 @@ public class Visual3DPage extends JPanel {
             return new Color[]{floor, wall};
         }
 
-    }
+        /* ========================== SAFE ITEM GETTERS ========================== */
 
-    /* ========================== Tiny 3D types ========================== */
+        private double safeX(FurnitureItem it) { return readNum(it, "getX", 0); }
+        private double safeY(FurnitureItem it) { return readNum(it, "getY", 0); }
+        private double safeW(FurnitureItem it) { return readNum(it, "getW", 60); }
+        private double safeH(FurnitureItem it) { return readNum(it, "getH", 40); }
 
-    private static class Vec3 {
-        final double x, y, z;
-        Vec3(double x, double y, double z) { this.x = x; this.y = y; this.z = z; }
-        Vec3 add(Vec3 o) { return new Vec3(x + o.x, y + o.y, z + o.z); }
-        Vec3 sub(Vec3 o) { return new Vec3(x - o.x, y - o.y, z - o.z); }
-    }
+        private int safeRotationDeg(FurnitureItem it) {
+            Double v = readNumObj(it, "getRotation", null);
+            if (v == null) v = readNumObj(it, "getRotationDeg", null);
+            if (v == null) v = readNumObj(it, "getRotationDegrees", null);
+            return (int) Math.round(v == null ? 0 : v);
+        }
 
-    private static class Face {
-        final List<Vec3> pts;
-        final Color color;
-        final double avgDepth;
-        Face(List<Vec3> pts, Color color, double avgDepth) {
-            this.pts = pts;
-            this.color = color;
-            this.avgDepth = avgDepth;
+        private int safeShading(FurnitureItem it) {
+            Double v = readNumObj(it, "getShadingPercent", null);
+            if (v == null) v = readNumObj(it, "getShade", null);
+            return (int) Math.round(v == null ? 50 : v);
+        }
+
+        private String safeColorHex(FurnitureItem it) {
+            try {
+                Object v = it.getClass().getMethod("getColorHex").invoke(it);
+                return (v == null) ? null : v.toString();
+            } catch (Throwable ignored) { }
+            return null;
+        }
+
+        private String safeKind(FurnitureItem it) {
+            try {
+                Object k = it.getClass().getMethod("getKind").invoke(it);
+                return (k == null) ? "" : k.toString();
+            } catch (Throwable ignored) { }
+            return "";
+        }
+
+        private double readNum(Object obj, String method, double fallback) {
+            Double v = readNumObj(obj, method, null);
+            return (v == null) ? fallback : v;
+        }
+
+        private Double readNumObj(Object obj, String method, Double fallback) {
+            if (obj == null) return fallback;
+            try {
+                Object v = obj.getClass().getMethod(method).invoke(obj);
+                if (v instanceof Number) return ((Number) v).doubleValue();
+            } catch (Throwable ignored) { }
+            return fallback;
+        }
+
+        /* ========================== DATA TYPES ========================== */
+
+        private class Face {
+            final List<Vec3> pts;
+            final Color color;
+            final double avgDepth;
+            Face(List<Vec3> pts, Color color, double avgDepth) {
+                this.pts = pts;
+                this.color = color;
+                this.avgDepth = avgDepth;
+            }
+        }
+
+        private class Vec3 {
+            final double x, y, z;
+            Vec3(double x, double y, double z) { this.x = x; this.y = y; this.z = z; }
+            Vec3 add(Vec3 o) { return new Vec3(x + o.x, y + o.y, z + o.z); }
+            Vec3 sub(Vec3 o) { return new Vec3(x - o.x, y - o.y, z - o.z); }
         }
     }
 }

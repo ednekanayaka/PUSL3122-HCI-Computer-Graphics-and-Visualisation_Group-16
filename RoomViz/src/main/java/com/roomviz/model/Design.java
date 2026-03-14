@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import com.roomviz.model.DesignStatus;
-
 /**
  * A saved design in the designer's portfolio.
  */
@@ -22,6 +20,12 @@ public class Design {
 
     private long createdAtEpochMs;
     private long lastUpdatedEpochMs;
+
+    // 2D layout bounds (for 3D sync)
+    private Integer layoutX;
+    private Integer layoutY;
+    private Integer layoutWidth;
+    private Integer layoutHeight;
 
     private List<FurnitureItem> items = new ArrayList<>();
 
@@ -45,10 +49,6 @@ public class Design {
 
     /* ========================= Compatibility helpers (NEW) ========================= */
 
-    /**
-     * Used by Planner2DPage / header label in my scaffold.
-     * Maps to your existing designName field.
-     */
     public String getName() {
         return getDesignName();
     }
@@ -58,13 +58,25 @@ public class Design {
     }
 
     /**
-     * Convenience creator used by AppState.getOrCreateCurrentDesign().
-     * Keeps your original field structure.
+     * ✅ FIXED:
+     * Make sure a new Design ALWAYS has a default RoomSpec,
+     * otherwise the room border/highlight logic becomes inconsistent.
      */
     public static Design createNew(String designName) {
         Design d = new Design();
         d.id = UUID.randomUUID().toString();
         d.designName = (designName == null || designName.isBlank()) ? "Untitled Design" : designName;
+
+        // ✅ default RoomSpec so room borders can always render
+        // (Pick values that match your UI defaults)
+        d.roomSpec = new RoomSpec(
+                12,               // width (units)
+                10,               // height/depth (units)
+                "ft",             // unit
+                "Rectangular",    // shape
+                "Neutral Tones"   // color scheme
+        );
+
         long now = System.currentTimeMillis();
         d.createdAtEpochMs = now;
         d.lastUpdatedEpochMs = now;
@@ -73,9 +85,6 @@ public class Design {
         return d;
     }
 
-    /**
-     * Update lastUpdatedEpochMs to "now".
-     */
     public void touchUpdatedAtNow() {
         this.lastUpdatedEpochMs = System.currentTimeMillis();
     }
@@ -109,11 +118,22 @@ public class Design {
     }
 
     public DesignStatus getStatus() {
-        // Backward compatibility: older JSON files won't have status -> null
         return (status == null) ? DesignStatus.DRAFT : status;
     }
 
     public void setStatus(DesignStatus status) {
         this.status = (status == null) ? DesignStatus.DRAFT : status;
     }
+
+    public Integer getLayoutX() { return layoutX; }
+    public void setLayoutX(Integer layoutX) { this.layoutX = layoutX; }
+
+    public Integer getLayoutY() { return layoutY; }
+    public void setLayoutY(Integer layoutY) { this.layoutY = layoutY; }
+
+    public Integer getLayoutWidth() { return layoutWidth; }
+    public void setLayoutWidth(Integer layoutWidth) { this.layoutWidth = layoutWidth; }
+
+    public Integer getLayoutHeight() { return layoutHeight; }
+    public void setLayoutHeight(Integer layoutHeight) { this.layoutHeight = layoutHeight; }
 }

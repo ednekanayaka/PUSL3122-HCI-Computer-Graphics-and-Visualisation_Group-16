@@ -29,11 +29,27 @@ public class AppState {
         this.currentDesignId = currentDesignId;
     }
 
+    /**
+     * Returns the currently selected design, or null if none is selected.
+     * (This does NOT create a new design.)
+     */
     public Design getCurrentDesignOrNull() {
         if (currentDesignId == null || currentDesignId.isBlank()) return null;
         return repo.getById(currentDesignId);
     }
 
+    /**
+     * Alias used by screens that expect appState.getCurrentDesign().
+     * Keeps behaviour "non-creating" (returns null if none selected).
+     */
+    public Design getCurrentDesign() {
+        return getCurrentDesignOrNull();
+    }
+
+    /**
+     * Convenience: returns current design; if none selected, creates a new one and selects it.
+     * NOTE: Use this only in flows where auto-creating is intended.
+     */
     public Design getOrCreateCurrentDesign() {
         Design d = getCurrentDesignOrNull();
         if (d != null) return d;

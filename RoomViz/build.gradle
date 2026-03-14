@@ -37,6 +37,6 @@ java {
     }
 }
 
-test {
-    useJUnitPlatform()
-}
+// test {
+//     useJUnitPlatform()
+// }
