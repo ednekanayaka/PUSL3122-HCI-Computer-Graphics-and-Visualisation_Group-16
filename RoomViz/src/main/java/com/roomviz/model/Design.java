@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.roomviz.model.DesignStatus;
+
 /**
  * A saved design in the designer's portfolio.
  */
@@ -15,6 +17,8 @@ public class Design {
     private String notes;
 
     private RoomSpec roomSpec;
+
+    private DesignStatus status = DesignStatus.DRAFT;
 
     private long createdAtEpochMs;
     private long lastUpdatedEpochMs;
@@ -31,6 +35,8 @@ public class Design {
         this.customerName = customerName;
         this.notes = notes;
         this.roomSpec = roomSpec;
+
+        this.status = DesignStatus.DRAFT;
 
         long now = System.currentTimeMillis();
         this.createdAtEpochMs = now;
@@ -63,6 +69,7 @@ public class Design {
         d.createdAtEpochMs = now;
         d.lastUpdatedEpochMs = now;
         d.items = new ArrayList<>();
+        d.status = DesignStatus.DRAFT;
         return d;
     }
 
@@ -99,5 +106,14 @@ public class Design {
     public List<FurnitureItem> getItems() { return items; }
     public void setItems(List<FurnitureItem> items) {
         this.items = (items == null) ? new ArrayList<>() : items;
+    }
+
+    public DesignStatus getStatus() {
+        // Backward compatibility: older JSON files won't have status -> null
+        return (status == null) ? DesignStatus.DRAFT : status;
+    }
+
+    public void setStatus(DesignStatus status) {
+        this.status = (status == null) ? DesignStatus.DRAFT : status;
     }
 }

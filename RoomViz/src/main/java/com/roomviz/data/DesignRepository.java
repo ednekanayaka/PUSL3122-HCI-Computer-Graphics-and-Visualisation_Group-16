@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.roomviz.model.Design;
+import com.roomviz.model.DesignStatus;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -60,6 +61,12 @@ public class DesignRepository {
     public synchronized void upsert(Design d) {
         if (d == null || d.getId() == null) return;
         d.setLastUpdatedEpochMs(System.currentTimeMillis());
+
+        // ensure status isn't null (older designs / gson)
+        if (d.getStatus() == null) {
+            d.setStatus(DesignStatus.DRAFT);
+        }
+
         byId.put(d.getId(), d);
         save();
     }
