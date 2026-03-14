@@ -1,0 +1,42 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.roomviz'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Modern Swing look & feel
+    implementation 'com.formdev:flatlaf:3.5.2'
+
+    // JSON (save/load designs)
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    // SQLite database (users + designs metadata)
+    implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
+
+    // Tests (keep)
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+application {
+    // This will be the real entry
+    mainClass = 'com.roomviz.app.App'
+}
+
+java {
+    // Keep things consistent with your JDK 17 setup
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+// test {
+//     useJUnitPlatform()
+// }
