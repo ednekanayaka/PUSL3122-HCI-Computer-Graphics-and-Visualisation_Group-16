@@ -8,7 +8,6 @@ import com.roomviz.data.AppState;
 import com.roomviz.model.Design;
 import com.roomviz.model.DesignStatus;
 import com.roomviz.model.RoomSpec;
-import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -32,7 +31,14 @@ import java.util.Locale;
  */
 public class DashboardPage extends JPanel {
 
-    // ----- Palette (Figma-like) - Now using UiKit globals where possible -----
+    // ----- Palette (Figma-like) -----
+    private static final Color BG = new Color(0xF6F7FB);
+    private static final Color TEXT = new Color(0x111827);
+    private static final Color MUTED = new Color(0x6B7280);
+    private static final Color BORDER = new Color(0xE5E7EB);
+    private static final Color WHITE = Color.WHITE;
+    private static final Color PRIMARY = new Color(0x4F46E5);
+    private static final Color PRIMARY_DARK = new Color(0x6D28D9);
     private static final Color SUCCESS = new Color(0x16A34A);
     private static final Color WARN = new Color(0xF59E0B);
 
@@ -78,8 +84,8 @@ public class DashboardPage extends JPanel {
         content.add(welcomeHeader());
         content.add(vSpace(14));
 
-        // Stats cards row (dynamic & wrapping)
-        statsRowRef = new JPanel(new FlowLayout(FlowLayout.CENTER, 14, 14));
+        // Stats cards row (dynamic)
+        statsRowRef = new JPanel(new GridLayout(1, 3, 14, 0));
         statsRowRef.setOpaque(false);
         content.add(statsRowRef);
         content.add(vSpace(16));
@@ -104,7 +110,7 @@ public class DashboardPage extends JPanel {
         content.add(vSpace(10));
 
         loadMoreLabel = new JLabel("Load More Designs \u2193");
-        loadMoreLabel.setForeground(UiKit.PRIMARY);
+        loadMoreLabel.setForeground(PRIMARY);
         loadMoreLabel.setFont(loadMoreLabel.getFont().deriveFont(Font.PLAIN, 12.5f));
         loadMoreLabel.setBorder(new EmptyBorder(6, 6, 6, 6));
         loadMoreLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -121,7 +127,7 @@ public class DashboardPage extends JPanel {
         JScrollPane scroller = new JScrollPane(content);
         scroller.setBorder(BorderFactory.createEmptyBorder());
         scroller.getViewport().setOpaque(true);
-        scroller.getViewport().setBackground(UiKit.BG);
+        scroller.getViewport().setBackground(BG);
         scroller.setOpaque(false);
         scroller.getVerticalScrollBar().setUnitIncrement(18);
 
@@ -344,18 +350,18 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent emptyRecentCard() {
-        RoundedPanel card = new RoundedPanel(14, UiKit.WHITE);
+        RoundedPanel card = new RoundedPanel(14, WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(UiKit.BORDER);
+        card.setBorderPaint(BORDER);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(14, 14, 14, 14));
 
         JLabel t = new JLabel("No designs yet");
-        t.setForeground(UiKit.TEXT);
+        t.setForeground(TEXT);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 13.2f));
 
         JLabel sub = new JLabel("Click “Create New Design” to start your first room visualization.");
-        sub.setForeground(UiKit.MUTED);
+        sub.setForeground(MUTED);
         sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.2f));
         sub.setBorder(new EmptyBorder(6, 0, 0, 0));
 
@@ -370,23 +376,23 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent emptyFilteredCard() {
-        RoundedPanel card = new RoundedPanel(14, UiKit.WHITE);
+        RoundedPanel card = new RoundedPanel(14, WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(UiKit.BORDER);
+        card.setBorderPaint(BORDER);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(14, 14, 14, 14));
 
         JLabel t = new JLabel("No matching designs");
-        t.setForeground(UiKit.TEXT);
+        t.setForeground(TEXT);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 13.2f));
 
         JLabel sub = new JLabel("Try clearing filters or searching with a different keyword.");
-        sub.setForeground(UiKit.MUTED);
+        sub.setForeground(MUTED);
         sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.2f));
         sub.setBorder(new EmptyBorder(6, 0, 0, 0));
 
         JLabel clear = new JLabel("Clear filters");
-        clear.setForeground(UiKit.PRIMARY);
+        clear.setForeground(PRIMARY);
         clear.setFont(clear.getFont().deriveFont(Font.BOLD, 12.2f));
         clear.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         clear.setBorder(new EmptyBorder(10, 0, 0, 0));
@@ -436,7 +442,7 @@ public class DashboardPage extends JPanel {
         JLabel l = (JLabel) chip;
         if (active) {
             l.setBackground(new Color(0xEEF2FF));
-            l.setForeground(UiKit.PRIMARY_DARK);
+            l.setForeground(PRIMARY_DARK);
             l.setFont(l.getFont().deriveFont(Font.BOLD, 11.5f));
         } else {
             l.setBackground(new Color(0xF3F4F6));
@@ -454,11 +460,11 @@ public class DashboardPage extends JPanel {
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
         JLabel h1 = new JLabel("Welcome back!");
-        h1.setForeground(UiKit.TEXT);
+        h1.setForeground(TEXT);
         h1.setFont(h1.getFont().deriveFont(Font.BOLD, 26f));
 
         JLabel sub = new JLabel("Ready to create stunning furniture visualizations for your clients?");
-        sub.setForeground(UiKit.MUTED);
+        sub.setForeground(MUTED);
         sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.5f));
         sub.setBorder(new EmptyBorder(6, 0, 0, 0));
 
@@ -468,12 +474,11 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent statCard(String value, String label, String pillText, Color pillFg, Color pillBg, Color iconBg) {
-        RoundedPanel card = new RoundedPanel(14, UiKit.WHITE);
+        RoundedPanel card = new RoundedPanel(14, WHITE);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(14, 14, 14, 14));
         card.setOpaque(false);
-        card.setBorderPaint(UiKit.BORDER);
-        card.setPreferredSize(new Dimension(220, 130)); // Responsive height to prevent cut-off
+        card.setBorderPaint(BORDER);
 
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
@@ -498,11 +503,11 @@ public class DashboardPage extends JPanel {
         mid.setBorder(new EmptyBorder(12, 2, 0, 0));
 
         JLabel v = new JLabel(value);
-        v.setForeground(UiKit.TEXT);
+        v.setForeground(TEXT);
         v.setFont(v.getFont().deriveFont(Font.BOLD, 22f));
 
         JLabel l = new JLabel(label);
-        l.setForeground(UiKit.MUTED);
+        l.setForeground(MUTED);
         l.setFont(l.getFont().deriveFont(Font.PLAIN, 12.2f));
         l.setBorder(new EmptyBorder(2, 0, 0, 0));
 
@@ -515,7 +520,7 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent ctaCard() {
-        GradientPanel g = new GradientPanel(UiKit.PRIMARY, UiKit.PRIMARY_DARK, 18);
+        GradientPanel g = new GradientPanel(PRIMARY, PRIMARY_DARK, 18);
         g.setLayout(new BoxLayout(g, BoxLayout.Y_AXIS));
         g.setBorder(new EmptyBorder(22, 22, 22, 22));
 
@@ -530,7 +535,7 @@ public class DashboardPage extends JPanel {
         sub.setBorder(new EmptyBorder(6, 0, 0, 0));
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JButton btn = UiKit.primaryGradientButton("+  Create New Design");
+        JButton btn = primaryButton("+  Create New Design");
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
         btn.addActionListener(e -> router.show(ScreenKeys.NEW_DESIGN));
 
@@ -542,9 +547,9 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent searchAndFilters() {
-        RoundedPanel card = new RoundedPanel(14, UiKit.WHITE);
+        RoundedPanel card = new RoundedPanel(14, WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(UiKit.BORDER);
+        card.setBorderPaint(BORDER);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(12, 12, 12, 12));
 
@@ -555,7 +560,7 @@ public class DashboardPage extends JPanel {
         setPlaceholder(searchField, SEARCH_PLACEHOLDER);
 
         searchField.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(UiKit.BORDER, 1, true),
+                new LineBorder(BORDER, 1, true),
                 new EmptyBorder(10, 12, 10, 12)
         ));
 
@@ -563,7 +568,7 @@ public class DashboardPage extends JPanel {
             @Override public void focusGained(FocusEvent e) {
                 if (SEARCH_PLACEHOLDER.equals(searchField.getText())) {
                     searchField.setText("");
-                    searchField.setForeground(UiKit.TEXT);
+                    searchField.setForeground(TEXT);
                 }
             }
             @Override public void focusLost(FocusEvent e) {
@@ -586,7 +591,7 @@ public class DashboardPage extends JPanel {
             @Override public void changedUpdate(DocumentEvent e) { update(); }
         });
 
-        JButton allFilters = UiKit.ghostButton("All Filters");
+        JButton allFilters = ghostButton("All Filters");
         allFilters.setPreferredSize(new Dimension(110, allFilters.getPreferredSize().height));
         allFilters.addActionListener(e -> clearDashboardFilters());
 
@@ -668,14 +673,14 @@ public class DashboardPage extends JPanel {
         row.setOpaque(false);
 
         JLabel title = new JLabel("Recent Designs");
-        title.setForeground(UiKit.TEXT);
+        title.setForeground(TEXT);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 16f));
 
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         right.setOpaque(false);
 
         JLabel sort = new JLabel("Sort by: Latest");
-        sort.setForeground(UiKit.MUTED);
+        sort.setForeground(MUTED);
         sort.setFont(sort.getFont().deriveFont(Font.PLAIN, 12.2f));
 
         right.add(sort);
@@ -701,9 +706,9 @@ public class DashboardPage extends JPanel {
         String status = hasItems ? "In Progress" : "Draft";
         Color statusColor = hasItems ? WARN : new Color(0x2563EB);
 
-        RoundedPanel card = new RoundedPanel(14, UiKit.WHITE);
+        RoundedPanel card = new RoundedPanel(14, WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(UiKit.BORDER);
+        card.setBorderPaint(BORDER);
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(12, 12, 12, 12));
 
@@ -720,11 +725,11 @@ public class DashboardPage extends JPanel {
         mid.setLayout(new BoxLayout(mid, BoxLayout.Y_AXIS));
 
         JLabel t = new JLabel(title + " - " + client);
-        t.setForeground(UiKit.TEXT);
+        t.setForeground(TEXT);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 13.2f));
 
         JLabel meta = new JLabel(edited);
-        meta.setForeground(UiKit.MUTED);
+        meta.setForeground(MUTED);
         meta.setFont(meta.getFont().deriveFont(Font.PLAIN, 11.5f));
         meta.setBorder(new EmptyBorder(2, 0, 0, 0));
 
@@ -797,7 +802,7 @@ public class DashboardPage extends JPanel {
 
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) { card.setFill(new Color(0xFAFAFB)); card.repaint(); }
-            @Override public void mouseExited(MouseEvent e) { card.setFill(UiKit.WHITE); card.repaint(); }
+            @Override public void mouseExited(MouseEvent e) { card.setFill(WHITE); card.repaint(); }
             @Override public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
                     appState.setCurrentDesignId(d.getId());
@@ -890,10 +895,40 @@ public class DashboardPage extends JPanel {
         return l;
     }
 
+    private static JButton primaryButton(String text) {
+        JButton b = new JButton(text);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFocusPainted(false);
+        b.setForeground(TEXT);
+        b.setBackground(Color.WHITE);
+        b.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(new Color(255, 255, 255, 140), 1, true),
+                new EmptyBorder(10, 16, 10, 16)
+        ));
+        return b;
+    }
 
+    private static JButton ghostButton(String text) {
+        JButton b = new JButton(text);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFocusPainted(false);
+        b.setBackground(Color.WHITE);
+        b.setForeground(new Color(0x111827));
+        b.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER, 1, true),
+                new EmptyBorder(9, 12, 9, 12)
+        ));
+        return b;
+    }
 
     private static JButton primarySmall(String text) {
-        return UiKit.primaryButton(text);
+        JButton b = new JButton(text);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFocusPainted(false);
+        b.setBackground(PRIMARY);
+        b.setForeground(Color.WHITE);
+        b.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        return b;
     }
 
     private static JButton ghostSmall(String text) {
@@ -920,9 +955,9 @@ public class DashboardPage extends JPanel {
     }
 
     private static JComponent iconSquare(String text) {
-        RoundedPanel p = new RoundedPanel(10, UiKit.WHITE);
+        RoundedPanel p = new RoundedPanel(10, WHITE);
         p.setOpaque(false);
-        p.setBorderPaint(UiKit.BORDER);
+        p.setBorderPaint(BORDER);
         p.setPreferredSize(new Dimension(28, 28));
         p.setLayout(new GridBagLayout());
         JLabel l = new JLabel(text);

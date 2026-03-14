@@ -71,14 +71,6 @@ public class DesignLibraryPage extends JPanel {
         // dynamic designs grid
         gridHost = new JPanel(new BorderLayout());
         gridHost.setOpaque(false);
-        gridHost.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override
-            public void componentResized(java.awt.event.ComponentEvent e) {
-                // Refresh if we are in grid mode and width significantly changed
-                // (Debouncing would be better, but Swing is fast enough for this layout)
-                refreshGrid(frame);
-            }
-        });
         content.add(gridHost);
 
         content.add(Box.createVerticalStrut(18));
@@ -134,7 +126,8 @@ public class DesignLibraryPage extends JPanel {
         left.add(title);
         left.add(sub);
 
-        JButton cta = UiKit.primaryGradientButton("+   Create New Design");
+        JButton cta = UiKit.primaryButton("+   Create New Design");
+        cta.setFont(UiKit.scaled(cta, Font.BOLD, 1.00f));
         cta.addActionListener(e -> this.router.show(ScreenKeys.NEW_DESIGN));
 
         row.add(left, BorderLayout.WEST);
@@ -461,9 +454,7 @@ public class DesignLibraryPage extends JPanel {
     }
 
     private JComponent grid(AppFrame frame, List<Design> designs) {
-        int w = gridHost.getWidth();
-        int cols = Math.max(1, Math.min(4, w / 260)); // ~260px per card min
-        JPanel grid = new JPanel(new GridLayout(0, cols, 14, 14));
+        JPanel grid = new JPanel(new GridLayout(0, 4, 14, 14));
         grid.setOpaque(false);
 
         for (Design d : designs) {

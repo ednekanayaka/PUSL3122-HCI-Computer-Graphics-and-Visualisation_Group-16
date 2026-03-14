@@ -174,118 +174,39 @@ public final class UiKit {
     }
 
     // ===== Buttons =====
- 
-    public static class RoundButton extends JButton {
-        private final int radius;
-        private Color normalBg;
-        private Color hoverBg;
-        private Color pressedBg;
-        private Color borderCol;
-        
-        private boolean isGradient = false;
-        private Color gradientA;
-        private Color gradientB;
- 
-        public RoundButton(String text, int radius) {
-            super(text);
-            this.radius = radius;
-            setOpaque(false);
-            setContentAreaFilled(false);
-            setFocusPainted(false);
-            setBorder(new EmptyBorder(10, 16, 10, 16));
-            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            
-            addMouseListener(new java.awt.event.MouseAdapter() {
-                @Override public void mouseEntered(java.awt.event.MouseEvent e) { repaint(); }
-                @Override public void mouseExited(java.awt.event.MouseEvent e) { repaint(); }
-                @Override public void mousePressed(java.awt.event.MouseEvent e) { repaint(); }
-                @Override public void mouseReleased(java.awt.event.MouseEvent e) { repaint(); }
-            });
-        }
- 
-        public void setColors(Color normal, Color hover, Color pressed) {
-            this.normalBg = normal;
-            this.hoverBg = hover;
-            this.pressedBg = pressed;
-        }
- 
-        public void setBorderColor(Color c) { this.borderCol = c; }
-        
-        public void setGradient(Color a, Color b) {
-            this.isGradient = (a != null && b != null);
-            this.gradientA = a;
-            this.gradientB = b;
-            repaint();
-        }
- 
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
- 
-            ButtonModel model = getModel();
-            Color bg = normalBg;
-            if (model.isPressed()) bg = pressedBg;
-            else if (model.isRollover()) bg = hoverBg;
- 
-            // Shadow (subtle)
-            if (!model.isPressed()) {
-                g2.setColor(new Color(0, 0, 0, 15));
-                g2.fillRoundRect(1, 2, getWidth() - 2, getHeight() - 2, radius, radius);
-            }
- 
-            if (isGradient && !model.isPressed()) {
-                GradientPaint gp = new GradientPaint(0, 0, gradientA, getWidth(), getHeight(), gradientB);
-                g2.setPaint(gp);
-            } else {
-                g2.setColor(bg);
-            }
-            
-            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 2, radius, radius);
- 
-            if (borderCol != null) {
-                g2.setColor(borderCol);
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 2, radius, radius);
-            }
- 
-            g2.dispose();
-            super.paintComponent(g);
-        }
-    }
- 
     public static JButton primaryButton(String text) {
-        RoundButton b = new RoundButton(text, 14);
-        b.setColors(PRIMARY, PRIMARY_DARK, PRIMARY_DARK.darker());
+        JButton b = new JButton(text);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFocusPainted(false);
+        b.setBackground(PRIMARY);
         b.setForeground(Color.WHITE);
-        b.setFont(scaled(b, Font.BOLD, 1.0f));
+        b.setBorder(new EmptyBorder(10, 14, 10, 14));
         return b;
     }
 
-    public static JButton primaryGradientButton(String text) {
-        RoundButton b = new RoundButton(text, 16);
-        b.setColors(PRIMARY, PRIMARY_DARK, PRIMARY_DARK.darker());
-        b.setGradient(new Color(0x6366F1), new Color(0x4338CA));
-        b.setForeground(Color.WHITE);
-        b.setFont(scaled(b, Font.BOLD, 1.05f));
-        b.setBorder(new EmptyBorder(12, 20, 12, 20));
-        return b;
-    }
- 
     public static JButton ghostButton(String text) {
-        RoundButton b = new RoundButton(text, 12);
-        b.setColors(WHITE, new Color(0xF9FAFB), new Color(0xF3F4F6));
+        JButton b = new JButton(text);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFocusPainted(false);
+        b.setBackground(WHITE);
         b.setForeground(TEXT);
-        b.setBorderColor(BORDER);
-        b.setFont(scaled(b, Font.PLAIN, 0.95f));
+        b.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER, 1, true),
+                new EmptyBorder(9, 12, 9, 12)
+        ));
         return b;
     }
 
     public static JButton iconButton(String iconText) {
-        RoundButton b = new RoundButton(iconText, 10);
-        b.setColors(WHITE, new Color(0xF9FAFB), new Color(0xF3F4F6));
+        JButton b = new JButton(iconText);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFocusPainted(false);
+        b.setBackground(WHITE);
         b.setForeground(TEXT);
-        b.setBorderColor(BORDER);
-        b.setBorder(new EmptyBorder(8, 10, 8, 10));
+        b.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER, 1, true),
+                new EmptyBorder(7, 9, 7, 9)
+        ));
         return b;
     }
 

@@ -24,9 +24,7 @@ public class Sidebar extends JPanel {
     public Sidebar(AppFrame frame, Router router, Consumer<String> onTitleChange) {
         this.onTitleChange = onTitleChange;
 
-        setMinimumSize(new Dimension(200, 0));
-        setMaximumSize(new Dimension(300, Integer.MAX_VALUE));
-        setPreferredSize(new Dimension(240, 0)); 
+        setPreferredSize(new Dimension(240, 0)); // ✅ keep same width
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(16, 12, 16, 12));
         setBackground(UiKit.WHITE);

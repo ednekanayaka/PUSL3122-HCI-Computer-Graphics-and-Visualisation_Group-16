@@ -408,6 +408,8 @@ public class Visual3DPage extends JPanel {
 
     /* ========================== SAFE LAYOUT GETTERS ========================== */
 
+    private static Double getLayoutX(Design d) { return readDouble(d, "getLayoutX"); }
+    private static Double getLayoutY(Design d) { return readDouble(d, "getLayoutY"); }
     private static Double getLayoutW(Design d) { return readDouble(d, "getLayoutWidth"); }
     private static Double getLayoutH(Design d) { return readDouble(d, "getLayoutHeight"); }
 
@@ -429,7 +431,7 @@ public class Visual3DPage extends JPanel {
 
         private double yaw = Math.toRadians(35);
         private double pitch = Math.toRadians(-22);
-        private double dist = 600;
+        private double dist = 820;
 
         private Vec3 sceneCenter = new Vec3(0, 0, 0);
         private Point lastMouse = null;
@@ -526,7 +528,7 @@ public class Visual3DPage extends JPanel {
             }
 
             double maxSpan = Math.max(roomW, roomD);
-            dist = clamp(maxSpan * 2.0, 100, 5000);
+            dist = clamp(maxSpan * 1.25, 260, 2600);
             repaint();
         }
 
@@ -637,6 +639,17 @@ public class Visual3DPage extends JPanel {
                     && spec.getLCutLength() > 0;
         }
 
+        private int cutWpx(RoomSpec spec, double roomW) {
+            double outerW = Math.max(0.0001, spec.getWidth());
+            int cut = (int) Math.round(roomW * (spec.getLCutWidth() / outerW));
+            return Math.max(1, Math.min((int) roomW - 1, cut));
+        }
+
+        private int cutDpx(RoomSpec spec, double roomD) {
+            double outerL = Math.max(0.0001, spec.getLength());
+            int cut = (int) Math.round(roomD * (spec.getLCutLength() / outerL));
+            return Math.max(1, Math.min((int) roomD - 1, cut));
+        }
 
         private List<Face> buildSceneFaces() {
             computeSceneCenter();
@@ -647,25 +660,23 @@ public class Visual3DPage extends JPanel {
 
             RoomSpec spec = d.getRoomSpec();
 
-            double roomW = 120;
-            double roomD = 120;
-            if (spec != null) {
-                double rw = spec.getWidth();
-                double rl = spec.getLength();
-                String unit = spec.getUnit();
-                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-                    rw *= 12.0;
-                    rl *= 12.0;
-                } else if ("m".equalsIgnoreCase(unit.trim())) {
-                    rw *= 39.3701;
-                    rl *= 39.3701;
-                }
-                roomW = rw;
-                roomD = rl;
+            double roomW = 520;
+            double roomD = 520;
+
+            Double lw = getLayoutW(d);
+            Double lh = getLayoutH(d);
+
+            if (lw != null && lh != null) {
+                roomW = Math.max(520, lw);
+                roomD = Math.max(520, lh);
+            } else {
+                Bounds b = computeSceneBounds();
+                roomW = Math.max(520, b.w);
+                roomD = Math.max(520, b.d);
             }
 
             double floorY = 0;
-            double wallH = 96; // 8ft standard height
+            double wallH = Math.max(260, Math.min(520, Math.max(roomW, roomD) * 0.45));
 
             double x0 = sceneCenter.x - roomW / 2;
             double x1 = sceneCenter.x + roomW / 2;
@@ -678,18 +689,11 @@ public class Visual3DPage extends JPanel {
 
             // ✅ FIX: Build correct room floor + walls for L-Shape (same cut-out logic as RoomCanvas)
             if (spec != null && isLShape(spec)) {
-                String unit = spec.getUnit();
-                double xCut, zCut;
-                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-                    xCut = x1 - spec.getLCutWidth() * 12.0;
-                    zCut = z0 + spec.getLCutLength() * 12.0;
-                } else if ("m".equalsIgnoreCase(unit.trim())) {
-                    xCut = x1 - spec.getLCutWidth() * 39.3701;
-                    zCut = z0 + spec.getLCutLength() * 39.3701;
-                } else {
-                    xCut = x1 - (int)Math.round(roomW * (spec.getLCutWidth() / spec.getWidth()));
-                    zCut = z0 + (int)Math.round(roomD * (spec.getLCutLength() / spec.getLength()));
-                }
+                int cutW = cutWpx(spec, roomW);
+                int cutD = cutDpx(spec, roomD);
+
+                double xCut = x1 - cutW;   // vertical cut line (removes top-right)
+                double zCut = z0 + cutD;   // horizontal cut line
 
                 // Floor = 2 quads:
                 // 1) Left slab (full depth)
@@ -755,26 +759,25 @@ public class Visual3DPage extends JPanel {
             Design design = getCurrentDesign();
             if (design == null) return faces;
 
-            RoomSpec spec = design.getRoomSpec();
-            double roomW = 120;
-            double roomD = 120;
-            if (spec != null) {
-                double rw = spec.getWidth();
-                double rl = spec.getLength();
-                String unit = spec.getUnit();
-                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-                    rw *= 12.0;
-                    rl *= 12.0;
-                } else if ("m".equalsIgnoreCase(unit.trim())) {
-                    rw *= 39.3701;
-                    rl *= 39.3701;
-                }
-                roomW = rw;
-                roomD = rl;
+            double roomW = 520;
+            double roomD = 520;
+
+            Double lw = getLayoutW(design);
+            Double lh = getLayoutH(design);
+            if (lw != null && lh != null) {
+                roomW = Math.max(520, lw);
+                roomD = Math.max(520, lh);
             }
 
             double lx = safeX(it);
             double lz = safeY(it);
+
+            Double lxo = getLayoutX(design);
+            Double lyo = getLayoutY(design);
+            if (lxo != null && lyo != null) {
+                lx = safeX(it) - lxo;
+                lz = safeY(it) - lyo;
+            }
 
             Vec3 c = new Vec3(
                     (lx + w / 2.0) - roomW / 2.0 + sceneCenter.x,
@@ -1005,19 +1008,15 @@ public class Visual3DPage extends JPanel {
             Design d = getCurrentDesign();
             if (d == null) return;
 
-            RoomSpec spec = d.getRoomSpec();
-            if (spec != null) {
-                double rw = spec.getWidth();
-                double rl = spec.getLength();
-                String unit = spec.getUnit();
-                if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-                    rw *= 12.0;
-                    rl *= 12.0;
-                } else if ("m".equalsIgnoreCase(unit.trim())) {
-                    rw *= 39.3701;
-                    rl *= 39.3701;
-                }
-                sceneCenter = new Vec3(rw / 2.0, 0, rl / 2.0);
+            Double lx = getLayoutX(d);
+            Double ly = getLayoutY(d);
+            Double lw = getLayoutW(d);
+            Double lh = getLayoutH(d);
+
+            if (lx != null && ly != null && lw != null && lh != null) {
+                double cx = lx + lw / 2.0;
+                double cz = ly + lh / 2.0;
+                sceneCenter = new Vec3(cx, 0, cz);
                 return;
             }
 

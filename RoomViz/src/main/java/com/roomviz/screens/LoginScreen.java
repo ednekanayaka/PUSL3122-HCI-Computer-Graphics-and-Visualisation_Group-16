@@ -139,7 +139,8 @@ public class LoginScreen extends JPanel {
         card.add(Box.createVerticalStrut(8));
 
         // Login button
-        JButton loginBtn = UiKit.primaryGradientButton("Log in");
+        JButton loginBtn = new JButton("Log in");
+        stylePrimaryButton(loginBtn);
         loginBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         loginBtn.addActionListener(e -> {
             String email = emailField.getText().trim();
@@ -187,26 +188,7 @@ public class LoginScreen extends JPanel {
             frame.goToAppShell();
         });
 
-        // Actions Row (Login + Demo)
-        JPanel actionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
-        actionsRow.setOpaque(false);
-        actionsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        actionsRow.add(loginBtn);
-
-        JButton demoBtn = UiKit.ghostButton("Demo Login");
-        demoBtn.addActionListener(e -> {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Logging in using coursework demo mode.",
-                    "Demo Login",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-            frame.goToAppShell();
-        });
-        actionsRow.add(demoBtn);
-
-        card.add(actionsRow);
+        card.add(loginBtn);
         card.add(Box.createVerticalStrut(14));
 
         // Small helper text
@@ -227,7 +209,12 @@ public class LoginScreen extends JPanel {
                 JOptionPane.showMessageDialog(this, "Request access flow can be added later.", "Info", JOptionPane.INFORMATION_MESSAGE)
         );
 
+        JButton demo = new JButton("Continue as demo");
+        styleSecondaryButton(demo);
+        demo.addActionListener(e -> frame.goToAppShell());
+
         bottomRow.add(requestAccess, BorderLayout.WEST);
+        bottomRow.add(demo, BorderLayout.EAST);
 
         card.add(bottomRow);
 
@@ -338,6 +325,27 @@ public class LoginScreen extends JPanel {
         field.setCaretColor(UiKit.TEXT);
     }
 
+    private void stylePrimaryButton(JButton b) {
+        b.setBackground(isHighContrast() ? UiKit.TEXT : new Color(0x6D28D9));
+        b.setForeground(Color.WHITE);
+        b.setFocusPainted(false);
+        b.setBorder(new EmptyBorder(12, 14, 12, 14));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFont(UiKit.scaled(b, Font.BOLD, 1.00f));
+        b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+    }
+
+    private void styleSecondaryButton(JButton b) {
+        b.setBackground(UiKit.WHITE);
+        b.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x6D28D9));
+        b.setFocusPainted(false);
+        b.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : new Color(0xD8B4FE), 1, true),
+                new EmptyBorder(10, 14, 10, 14)
+        ));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setFont(UiKit.scaled(b, Font.PLAIN, 0.92f));
+    }
 
     private void showError(String msg) {
         errorLabel.setText(msg == null ? " " : msg);

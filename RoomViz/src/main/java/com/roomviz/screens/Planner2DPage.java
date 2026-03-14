@@ -117,9 +117,6 @@ public class Planner2DPage extends JPanel {
         // ✅ Build UI + load if possible (or empty state)
         rebuildFullUI();
 
-        // One-time listener setup to prevent cumulative listeners/crashes
-        setupListeners();
-
         // RELOAD on navigation (e.g. coming from New Design Wizard)
         if (router != null) {
             router.addListener(key -> {
@@ -128,111 +125,6 @@ public class Planner2DPage extends JPanel {
                 }
             });
         }
-    }
-
-    private void setupListeners() {
-        installApplyOnEnterOrBlur(xField, () -> {
-            if (canvas.getSelected() == null) return;
-            pushUndoSnapshot();
-            applyPositionFromFields();
-            markDirtyAndAutosave();
-        });
-        installApplyOnEnterOrBlur(yField, () -> {
-            if (canvas.getSelected() == null) return;
-            pushUndoSnapshot();
-            applyPositionFromFields();
-            markDirtyAndAutosave();
-        });
-        installApplyOnEnterOrBlur(rotField, () -> {
-            if (canvas.getSelected() == null) return;
-            try {
-                int v = Integer.parseInt(rotField.getText().trim());
-                pushUndoSnapshot();
-                canvas.setSelectedRotation(v);
-                programmaticUpdate = true;
-                rotationSlider.setValue(v);
-                programmaticUpdate = false;
-                markDirtyAndAutosave();
-            } catch (Exception ignored) {}
-        });
-        installApplyOnEnterOrBlur(wField, () -> {
-            if (canvas.getSelected() == null) return;
-            pushUndoSnapshot();
-            applyScaleFromFields();
-            markDirtyAndAutosave();
-        });
-        installApplyOnEnterOrBlur(hField, () -> {
-            if (canvas.getSelected() == null) return;
-            pushUndoSnapshot();
-            applyScaleFromFields();
-            markDirtyAndAutosave();
-        });
-
-        rotationSlider.addChangeListener(e -> {
-            if (programmaticUpdate) return;
-            if (canvas.getSelected() == null) return;
-
-            if (rotationSlider.getValueIsAdjusting()) {
-                if (!rotationDragging) {
-                    rotationDragging = true;
-                    pushUndoSnapshot();
-                }
-            } else {
-                rotationDragging = false;
-            }
-
-            canvas.setSelectedRotation(rotationSlider.getValue());
-            programmaticUpdate = true;
-            rotField.setText(String.valueOf(rotationSlider.getValue()));
-            programmaticUpdate = false;
-            markDirtyAndAutosave();
-        });
-
-        shadingSlider.addChangeListener(e -> {
-            if (programmaticUpdate) return;
-            if (canvas.getSelected() == null) return;
-
-            if (shadingSlider.getValueIsAdjusting()) {
-                if (!shadingDragging) {
-                    shadingDragging = true;
-                    pushUndoSnapshot();
-                }
-            } else {
-                shadingDragging = false;
-            }
-
-            canvas.setSelectedShading(shadingSlider.getValue());
-            markDirtyAndAutosave();
-        });
-
-        shadingToolsBtn.addActionListener(e -> {
-            if (router != null) router.show(ScreenKeys.SHADING_COLOR);
-        });
-
-        deleteBtn.addActionListener(e -> {
-            if (canvas.getSelected() == null) return;
-            pushUndoSnapshot();
-            canvas.deleteSelected();
-            updatePropertiesFromSelection();
-            markDirtyAndAutosave();
-        });
-
-        canvas.setOnSelectionChanged(() -> {
-            updatePropertiesFromSelection();
-            FurnitureItem sel = canvas.getSelected();
-            appState.setSelectedItemId(sel == null ? null : sel.getId());
-        });
-
-        canvas.setOnEditStart(this::pushUndoSnapshot);
-        canvas.setOnEditCommit(this::markDirtyAndAutosave);
-
-        canvas.setOnDeleteRequested(() -> {
-            if (canvas.getSelected() == null) return;
-            pushUndoSnapshot();
-            canvas.deleteSelected();
-            updatePropertiesFromSelection();
-            markDirtyAndAutosave();
-        });
     }
 
     /* ========================= UI REBUILD / EMPTY STATE ========================= */
@@ -251,15 +143,7 @@ public class Planner2DPage extends JPanel {
 
         // ===== Main layout: left | center | right =====
         JPanel left = buildFurnitureLibrary();
-        
-        // Wrap properties in a scroll pane for small screen accessibility
-        JPanel rightPanel = buildPropertiesPanel();
-        JScrollPane rightScroll = new JScrollPane(rightPanel);
-        rightScroll.setBorder(BorderFactory.createEmptyBorder());
-        rightScroll.setOpaque(false);
-        rightScroll.getViewport().setOpaque(false);
-        rightScroll.getVerticalScrollBar().setUnitIncrement(14);
-        rightScroll.setPreferredSize(new Dimension(280, 0));
+        JPanel right = buildPropertiesPanel();
 
         JPanel center = new JPanel(new BorderLayout(12, 12));
         center.setOpaque(false);
@@ -270,13 +154,12 @@ public class Planner2DPage extends JPanel {
         UiKit.RoundedPanel canvasCard = new UiKit.RoundedPanel(18, UiKit.WHITE);
         canvasCard.setBorderPaint(UiKit.BORDER);
         canvasCard.setLayout(new BorderLayout());
-        canvasCard.setBorder(new EmptyBorder(12, 12, 12, 12));
         canvasCard.add(canvas, BorderLayout.CENTER);
         center.add(canvasCard, BorderLayout.CENTER);
 
         add(left, BorderLayout.WEST);
         add(center, BorderLayout.CENTER);
-        add(rightScroll, BorderLayout.EAST);
+        add(right, BorderLayout.EAST);
 
         // ✅ Load design now that UI exists
         loadDesignIntoCanvas();
@@ -545,16 +428,16 @@ public class Planner2DPage extends JPanel {
         JTextField search = UiKit.searchField("Search furniture...");
         search.setPreferredSize(new Dimension(0, 40));
 
-        // ---- All templates (source of truth) - Unit: Inches ----
+        // ---- All templates (source of truth) ----
         final java.util.List<FurnitureTemplate> allTemplates = new java.util.ArrayList<>();
-        allTemplates.add(new FurnitureTemplate("Accent Chair", "32\" × 34\"", FurnitureKind.CHAIR, 32, 34));
-        allTemplates.add(new FurnitureTemplate("Dining Chair", "18\" × 22\"", FurnitureKind.CHAIR, 18, 22));
-        allTemplates.add(new FurnitureTemplate("Lounge Chair", "36\" × 38\"", FurnitureKind.CHAIR, 36, 38));
-        allTemplates.add(new FurnitureTemplate("Rectangular Table", "72\" × 36\"", FurnitureKind.TABLE_RECT, 72, 36));
-        allTemplates.add(new FurnitureTemplate("Round Table", "48\" Ø", FurnitureKind.TABLE_ROUND, 48, 48));
-        allTemplates.add(new FurnitureTemplate("Coffee Table", "48\" × 24\"", FurnitureKind.TABLE_RECT, 48, 24));
-        allTemplates.add(new FurnitureTemplate("End Table", "20\" × 20\"", FurnitureKind.TABLE_RECT, 20, 20));
-        allTemplates.add(new FurnitureTemplate("Console Table", "48\" × 16\"", FurnitureKind.TABLE_RECT, 48, 16));
+        allTemplates.add(new FurnitureTemplate("Accent Chair", "32\" × 34\"", FurnitureKind.CHAIR, 64, 48));
+        allTemplates.add(new FurnitureTemplate("Dining Chair", "18\" × 22\"", FurnitureKind.CHAIR, 44, 36));
+        allTemplates.add(new FurnitureTemplate("Lounge Chair", "36\" × 38\"", FurnitureKind.CHAIR, 70, 56));
+        allTemplates.add(new FurnitureTemplate("Rectangular Table", "72\" × 36\"", FurnitureKind.TABLE_RECT, 120, 70));
+        allTemplates.add(new FurnitureTemplate("Round Table", "48\" Ø", FurnitureKind.TABLE_ROUND, 90, 90));
+        allTemplates.add(new FurnitureTemplate("Coffee Table", "48\" × 24\"", FurnitureKind.TABLE_RECT, 90, 50));
+        allTemplates.add(new FurnitureTemplate("End Table", "20\" × 20\"", FurnitureKind.TABLE_RECT, 44, 44));
+        allTemplates.add(new FurnitureTemplate("Console Table", "48\" × 16\"", FurnitureKind.TABLE_RECT, 90, 38));
 
         // ---- Visible model (filtered) ----
         DefaultListModel<FurnitureTemplate> model = new DefaultListModel<>();
@@ -700,68 +583,43 @@ public class Planner2DPage extends JPanel {
     private JPanel buildPageHeader() {
         UiKit.RoundedPanel header = new UiKit.RoundedPanel(18, UiKit.WHITE);
         header.setBorderPaint(UiKit.BORDER);
-        header.setLayout(new GridBagLayout());
-        header.setBorder(new EmptyBorder(8, 16, 8, 16));
+        header.setLayout(new BorderLayout(12, 0));
+        header.setBorder(new EmptyBorder(10, 12, 10, 12));
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.VERTICAL;
-
-        // Group 1: Branding & Status
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
         JLabel appName = new JLabel("RoomPlan");
         appName.setFont(UiKit.scaled(appName, Font.BOLD, 0.98f));
-        appName.setForeground(UiKit.PRIMARY);
+        appName.setForeground(UiKit.TEXT);
+
+        JLabel divider = new JLabel("|");
+        divider.setForeground(UiKit.BORDER);
 
         Design d = appState.getCurrentDesign();
         String name = (d == null) ? "No design selected" : d.getName();
-        JLabel designLabel = new JLabel(name);
-        designLabel.setFont(UiKit.scaled(designLabel, Font.PLAIN, 0.95f));
-        designLabel.setForeground(UiKit.MUTED);
 
-        autosaved.setForeground(UiKit.MUTED);
-        autosaved.setFont(UiKit.scaled(autosaved, Font.PLAIN, 0.82f));
+        JLabel designName = new JLabel(name);
+        designName.setFont(UiKit.scaled(designName, Font.PLAIN, 0.96f));
+        designName.setForeground(new Color(0x374151));
 
         left.add(appName);
-        left.add(new JLabel("•")).setForeground(UiKit.BORDER);
-        left.add(designLabel);
-        left.add(Box.createHorizontalStrut(8));
-        left.add(autosaved);
+        left.add(divider);
+        left.add(designName);
 
-        gbc.gridx = 0;
-        gbc.weightx = 1.0;
-        gbc.anchor = GridBagConstraints.WEST;
-        header.add(left, gbc);
-
-        // Group 2: History & Actions
-        JPanel center = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
-        center.setOpaque(false);
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        right.setOpaque(false);
 
         JButton undo = UiKit.iconButton("↶");
         JButton redo = UiKit.iconButton("↷");
-        undo.setToolTipText("Undo (Ctrl+Z)");
-        redo.setToolTipText("Redo (Ctrl+Y)");
         undo.addActionListener(e -> doUndo());
         redo.addActionListener(e -> doRedo());
 
         JButton save = UiKit.ghostButton("Save");
-        save.setFont(UiKit.scaled(save, Font.BOLD, 0.90f));
         save.addActionListener(e -> saveDesign("Saved"));
 
-        center.add(undo);
-        center.add(redo);
-        center.add(Box.createHorizontalStrut(4));
-        center.add(save);
-
-        gbc.gridx = 1;
-        gbc.weightx = 0;
-        gbc.anchor = GridBagConstraints.CENTER;
-        header.add(center, gbc);
-
-        // Group 3: View Toggles
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        right.setOpaque(false);
+        autosaved.setForeground(UiKit.MUTED);
+        autosaved.setFont(UiKit.scaled(autosaved, Font.PLAIN, 0.90f));
 
         JToggleButton toggle2d = new JToggleButton("2D");
         JToggleButton toggle3d = new JToggleButton("3D");
@@ -778,25 +636,43 @@ public class Planner2DPage extends JPanel {
             styleMiniToggle(toggle3d, false);
         });
         toggle3d.addActionListener(e -> {
-            if (appState.getCurrentDesign() == null) return;
+            if (appState.getCurrentDesign() == null) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Select or create a design first.",
+                        "No design selected",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+                toggle2d.setSelected(true);
+                styleMiniToggle(toggle2d, true);
+                styleMiniToggle(toggle3d, false);
+                return;
+            }
+
             saveDesign("Saved before 3D");
+            styleMiniToggle(toggle2d, false);
+            styleMiniToggle(toggle3d, true);
             if (router != null) router.show(ScreenKeys.VIEW_3D);
         });
 
-        JButton export = UiKit.iconButton("📤");
-        export.setPreferredSize(new Dimension(32, 32));
-        export.setToolTipText("Export Design");
-        export.addActionListener(e -> JOptionPane.showMessageDialog(this, "Export available in Settings → Account ✅"));
+        JButton export = UiKit.ghostButton("Export");
+        export.addActionListener(e -> JOptionPane.showMessageDialog(
+                this,
+                "Export is available in Settings → Account → Export Data ✅",
+                "Export",
+                JOptionPane.INFORMATION_MESSAGE
+        ));
 
+        right.add(undo);
+        right.add(redo);
+        right.add(save);
+        right.add(autosaved);
         right.add(toggle2d);
         right.add(toggle3d);
         right.add(export);
 
-        gbc.gridx = 2;
-        gbc.weightx = 1.0;
-        gbc.anchor = GridBagConstraints.EAST;
-        header.add(right, gbc);
-
+        header.add(left, BorderLayout.WEST);
+        header.add(right, BorderLayout.EAST);
         return header;
     }
 
@@ -827,6 +703,7 @@ public class Planner2DPage extends JPanel {
     private JPanel buildPropertiesPanel() {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, UiKit.WHITE);
         card.setBorderPaint(UiKit.BORDER);
+        card.setPreferredSize(new Dimension(320, 0));
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(14, 14, 14, 14));
 
@@ -846,33 +723,36 @@ public class Planner2DPage extends JPanel {
         content.add(selectedTitle);
         content.add(Box.createVerticalStrut(14));
 
-        content.add(sectionLabel("📐 Position"));
+        content.add(sectionLabel("Position"));
         content.add(twoFieldRow("X Position", xField, "Y Position", yField));
-        content.add(Box.createVerticalStrut(18));
+        content.add(Box.createVerticalStrut(14));
 
-        content.add(sectionLabel("🔄 Rotation"));
+        content.add(sectionLabel("Rotation"));
         content.add(rotationRow());
-        content.add(Box.createVerticalStrut(18));
+        content.add(Box.createVerticalStrut(14));
 
-        content.add(sectionLabel("📏 Dimensions"));
+        content.add(sectionLabel("Scale"));
         content.add(twoFieldRow("Width", wField, "Height", hField));
         lockAspect.setOpaque(false);
         lockAspect.setForeground(UiKit.MUTED);
         lockAspect.setFont(UiKit.scaled(lockAspect, Font.PLAIN, 0.90f));
         lockAspect.setBorder(new EmptyBorder(6, 2, 0, 0));
         content.add(lockAspect);
-        content.add(Box.createVerticalStrut(18));
+        content.add(Box.createVerticalStrut(14));
 
-        content.add(sectionLabel("🌓 Shading Intensity"));
+        content.add(sectionLabel("Shading Intensity"));
         content.add(shadingRow());
-        content.add(Box.createVerticalStrut(12));
+        content.add(Box.createVerticalStrut(10));
 
         shadingToolsBtn.setBorder(new EmptyBorder(10, 12, 10, 12));
         shadingToolsBtn.setFont(UiKit.scaled(shadingToolsBtn, Font.BOLD, 0.92f));
+        shadingToolsBtn.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.SHADING_COLOR);
+        });
         content.add(shadingToolsBtn);
 
-        content.add(Box.createVerticalStrut(18));
-        content.add(sectionLabel("🥞 Layer Order"));
+        content.add(Box.createVerticalStrut(14));
+        content.add(sectionLabel("Layer Order"));
         content.add(layerRow());
         content.add(Box.createVerticalStrut(16));
 
@@ -1049,7 +929,107 @@ public class Planner2DPage extends JPanel {
     /* ========================= Wiring ========================= */
 
     private void wireRightPanel() {
-        // Redundant - listeners moved to setupListeners()
+        installApplyOnEnterOrBlur(xField, () -> {
+            if (canvas.getSelected() == null) return;
+            pushUndoSnapshot();
+            applyPositionFromFields();
+            markDirtyAndAutosave();
+        });
+        installApplyOnEnterOrBlur(yField, () -> {
+            if (canvas.getSelected() == null) return;
+            pushUndoSnapshot();
+            applyPositionFromFields();
+            markDirtyAndAutosave();
+        });
+        installApplyOnEnterOrBlur(wField, () -> {
+            if (canvas.getSelected() == null) return;
+            pushUndoSnapshot();
+            applyScaleFromFields();
+            markDirtyAndAutosave();
+        });
+        installApplyOnEnterOrBlur(hField, () -> {
+            if (canvas.getSelected() == null) return;
+            pushUndoSnapshot();
+            applyScaleFromFields();
+            markDirtyAndAutosave();
+        });
+
+        rotationSlider.addChangeListener(e -> {
+            if (programmaticUpdate) return;
+            if (canvas.getSelected() == null) return;
+
+            if (rotationSlider.getValueIsAdjusting()) {
+                if (!rotationDragging) {
+                    rotationDragging = true;
+                    pushUndoSnapshot();
+                }
+            } else {
+                rotationDragging = false;
+            }
+
+            canvas.setSelectedRotation(rotationSlider.getValue());
+            rotField.setText(String.valueOf(rotationSlider.getValue()));
+            markDirtyAndAutosave();
+        });
+
+        installApplyOnEnterOrBlur(rotField, () -> {
+            if (canvas.getSelected() == null) return;
+            try {
+                int v = Integer.parseInt(rotField.getText().trim());
+                v = Math.max(0, Math.min(360, v));
+
+                pushUndoSnapshot();
+                canvas.setSelectedRotation(v);
+
+                programmaticUpdate = true;
+                rotationSlider.setValue(v);
+                programmaticUpdate = false;
+
+                markDirtyAndAutosave();
+            } catch (Exception ignored) {}
+        });
+
+        shadingSlider.addChangeListener(e -> {
+            if (programmaticUpdate) return;
+            if (canvas.getSelected() == null) return;
+
+            if (shadingSlider.getValueIsAdjusting()) {
+                if (!shadingDragging) {
+                    shadingDragging = true;
+                    pushUndoSnapshot();
+                }
+            } else {
+                shadingDragging = false;
+            }
+
+            canvas.setSelectedShading(shadingSlider.getValue());
+            markDirtyAndAutosave();
+        });
+
+        deleteBtn.addActionListener(e -> {
+            if (canvas.getSelected() == null) return;
+            pushUndoSnapshot();
+            canvas.deleteSelected();
+            updatePropertiesFromSelection();
+            markDirtyAndAutosave();
+        });
+
+        canvas.setOnSelectionChanged(() -> {
+            updatePropertiesFromSelection();
+            FurnitureItem sel = canvas.getSelected();
+            appState.setSelectedItemId(sel == null ? null : sel.getId());
+        });
+
+        canvas.setOnEditStart(this::pushUndoSnapshot);
+        canvas.setOnEditCommit(this::markDirtyAndAutosave);
+
+        canvas.setOnDeleteRequested(() -> {
+            if (canvas.getSelected() == null) return;
+            pushUndoSnapshot();
+            canvas.deleteSelected();
+            updatePropertiesFromSelection();
+            markDirtyAndAutosave();
+        });
     }
 
     private void applyPositionFromFields() {

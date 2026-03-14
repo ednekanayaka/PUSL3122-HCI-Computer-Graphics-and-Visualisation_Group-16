@@ -275,8 +275,8 @@ public class DesignDetailsPage extends JPanel {
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         actions.setOpaque(false);
 
-        JButton duplicate = UiKit.ghostButton("Duplicate");
-        JButton edit = UiKit.ghostButton("Edit Details");
+        JButton duplicate = ghostButton("Duplicate");
+        JButton edit = ghostButton("Edit Details");
         JButton delete = dangerOutlineButton("Delete");
 
         duplicate.addActionListener(e -> {
@@ -586,7 +586,7 @@ public class DesignDetailsPage extends JPanel {
         title.setForeground(TEXT);
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.05f));
 
-        JButton close = UiKit.ghostButton("Close");
+        JButton close = ghostButton("Close");
         close.addActionListener(e -> dialog.dispose());
 
         JPanel top = new JPanel(new BorderLayout());
@@ -928,6 +928,19 @@ public class DesignDetailsPage extends JPanel {
         b.setBorder(new EmptyBorder(6, 10, 6, 10));
     }
 
+    private JButton ghostButton(String text) {
+        JButton b = new JButton(text);
+        b.setFocusPainted(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setBackground(WHITE);
+        b.setForeground(TEXT);
+        b.setFont(UiKit.scaled(b, Font.BOLD, 0.90f));
+        b.setBorder(new CompoundBorder(
+                new LineBorder(BORDER, 1, true),
+                new EmptyBorder(8, 12, 8, 12)
+        ));
+        return b;
+    }
 
     private JButton dangerOutlineButton(String text) {
         JButton b = new JButton(text);

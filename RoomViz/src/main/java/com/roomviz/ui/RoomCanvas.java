@@ -10,10 +10,8 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.Path2D;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
-import java.util.Locale;
-import java.util.UUID;
 
 public class RoomCanvas extends JPanel {
 
@@ -22,12 +20,14 @@ public class RoomCanvas extends JPanel {
     private RoomSpec roomSpec;
 
     private Point dragStartMouse = null;
-    private Point dragStartItem = null;
+
+    // drag start in RELATIVE coords (0..1 inside room bounds)
+    private double dragStartRelX = 0;
+    private double dragStartRelY = 0;
 
     // Room boundary (computed each paint from roomSpec + viewport scaling)
     private Shape cachedRoomShape = null;
     private Rectangle cachedRoomBoundsPx = null;
-    private double ppi = 1.0; // Pixels per inch
 
     private Runnable onSelectionChanged = null;
 
@@ -38,21 +38,49 @@ public class RoomCanvas extends JPanel {
     // delete hook (keyboard delete)
     private Runnable onDeleteRequested = null;
 
+    // ✅ Room cache safety
+    private static final int MIN_ROOM_PX = 80;
+    private static final int PAD = 46;
+
+    // ✅ Canvas minimum size (prevents “window becomes a point”)
+    private static final int MIN_CANVAS_W = 900;
+    private static final int MIN_CANVAS_H = 600;
+
+    /**
+     * Stable storage of item geometry relative to the room bounds:
+     * x,y,w,h are all 0..1 relative to room width/height.
+     * This prevents drift + repeated scaling bugs.
+     */
+    private static class RelRect {
+        double x, y, w, h;
+        RelRect(double x, double y, double w, double h) {
+            this.x = x; this.y = y; this.w = w; this.h = h;
+        }
+    }
+
+    private final Map<String, RelRect> relById = new HashMap<>();
+
     public RoomCanvas() {
         this(null);
     }
 
     public RoomCanvas(RoomSpec spec) {
         this.roomSpec = spec;
+
         setOpaque(false);
         setFocusable(true);
         setLayout(null);
         setBorder(new EmptyBorder(10, 10, 10, 10));
 
+        setMinimumSize(new Dimension(MIN_CANVAS_W, MIN_CANVAS_H));
+
         MouseAdapter ma = new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
                 requestFocusInWindow();
+
+                ensureRoomCache();
+                syncRelFromPixelsIfMissing(); // make sure rel exists before hit test
 
                 FurnitureItem hit = hitTest(e.getPoint());
                 setSelected(hit);
@@ -61,25 +89,44 @@ public class RoomCanvas extends JPanel {
                     if (onEditStart != null) onEditStart.run();
 
                     dragStartMouse = e.getPoint();
-                    dragStartItem = new Point(safeInt(hit.getX()), safeInt(hit.getY()));
+                    RelRect rr = relById.get(safeId(hit));
+                    if (rr != null) {
+                        dragStartRelX = rr.x;
+                        dragStartRelY = rr.y;
+                    }
                 } else {
                     dragStartMouse = null;
-                    dragStartItem = null;
                 }
+
                 repaint();
             }
 
             @Override
             public void mouseDragged(MouseEvent e) {
-                if (selected == null || dragStartMouse == null || dragStartItem == null) return;
+                if (selected == null || dragStartMouse == null) return;
                 ensureRoomCache();
+                if (cachedRoomBoundsPx == null) return;
+
+                RelRect rr = relById.get(safeId(selected));
+                if (rr == null) return;
 
                 int dx = e.getX() - dragStartMouse.x;
                 int dy = e.getY() - dragStartMouse.y;
 
-                // Move in inches
-                selected.setX(dragStartItem.x + (int)(dx / ppi));
-                selected.setY(dragStartItem.y + (int)(dy / ppi));
+                double roomW = Math.max(1, cachedRoomBoundsPx.getWidth());
+                double roomH = Math.max(1, cachedRoomBoundsPx.getHeight());
+
+                // convert pixel delta -> relative delta
+                double dRelX = dx / roomW;
+                double dRelY = dy / roomH;
+
+                rr.x = dragStartRelX + dRelX;
+                rr.y = dragStartRelY + dRelY;
+
+                clampRelIntoRoomShape(selected, rr);
+
+                // update item pixel fields so property panel stays in sync
+                syncOneItemPixelsFromRel(selected, rr);
 
                 repaint();
                 fireSelectionChanged();
@@ -87,21 +134,21 @@ public class RoomCanvas extends JPanel {
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                ensureRoomCache(); 
+                ensureRoomCache();
 
                 if (selected != null) {
-                    clampItemIntoRoom(selected);
+                    RelRect rr = relById.get(safeId(selected));
+                    if (rr != null) {
+                        clampRelIntoRoomShape(selected, rr);
+                        syncOneItemPixelsFromRel(selected, rr);
+                    }
                     repaint();
                     fireSelectionChanged();
-                }
 
-                if (selected != null && dragStartItem != null) {
-                    boolean moved = selected.getX() != dragStartItem.x || selected.getY() != dragStartItem.y;
-                    if (moved && onEditCommit != null) onEditCommit.run();
+                    if (onEditCommit != null) onEditCommit.run();
                 }
 
                 dragStartMouse = null;
-                dragStartItem = null;
             }
         };
 
@@ -116,21 +163,33 @@ public class RoomCanvas extends JPanel {
             }
         });
 
-        // ✅ Keep cache updated on resize too
+        // ✅ On resize: do NOT scale the model.
+        // Just rebuild cache and repaint. Rel coords stay stable.
         addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) {
                 cachedRoomBoundsPx = null;
                 cachedRoomShape = null;
+                ensureRoomCache();
+                syncAllPixelsFromRel(); // update displayed pixel numbers
                 repaint();
             }
         });
+    }
+
+    @Override
+    public Dimension getMinimumSize() {
+        return new Dimension(MIN_CANVAS_W, MIN_CANVAS_H);
     }
 
     public void setRoomSpec(RoomSpec spec) {
         this.roomSpec = spec;
         cachedRoomBoundsPx = null;
         cachedRoomShape = null;
+
         ensureRoomCache();
+        syncRelFromPixelsIfMissing();
+        syncAllPixelsFromRel();
+
         repaint();
     }
 
@@ -148,6 +207,11 @@ public class RoomCanvas extends JPanel {
     public void setItems(List<FurnitureItem> items) {
         this.items = (items == null) ? new ArrayList<>() : items;
         if (selected != null && !this.items.contains(selected)) selected = null;
+
+        ensureRoomCache();
+        syncRelFromPixelsIfMissing();
+        syncAllPixelsFromRel();
+
         repaint();
         fireSelectionChanged();
     }
@@ -158,28 +222,14 @@ public class RoomCanvas extends JPanel {
         if (t == null) return;
 
         ensureRoomCache();
+        if (cachedRoomBoundsPx == null) return;
 
-        int defW = Math.max(10, t.defaultW);
-        int defH = Math.max(10, t.defaultH);
+        int defW = Math.max(20, t.defaultW);
+        int defH = Math.max(20, t.defaultH);
 
-        // Center item in room (inches)
-        double rw = 120;
-        double rl = 120;
-        if (roomSpec != null) {
-            rw = roomSpec.getWidth();
-            rl = roomSpec.getLength();
-            String unit = roomSpec.getUnit();
-            if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-                rw *= 12.0;
-                rl *= 12.0;
-            } else if ("m".equalsIgnoreCase(unit.trim())) {
-                rw *= 39.3701;
-                rl *= 39.3701;
-            }
-        }
-
-        int cx = (int)(rw / 2.0 - defW / 2.0);
-        int cy = (int)(rl / 2.0 - defH / 2.0);
+        // center in room (pixel), then convert to rel
+        int cx = cachedRoomBoundsPx.x + cachedRoomBoundsPx.width / 2 - defW / 2;
+        int cy = cachedRoomBoundsPx.y + cachedRoomBoundsPx.height / 2 - defH / 2;
 
         FurnitureItem it = new FurnitureItem(
                 UUID.randomUUID().toString(),
@@ -189,9 +239,16 @@ public class RoomCanvas extends JPanel {
         );
 
         items.add(it);
-        setSelected(it);
 
-        clampItemIntoRoom(it);
+        // create relative rect
+        RelRect rr = pixelRectToRel(it);
+        relById.put(safeId(it), rr);
+
+        // clamp to room shape, sync pixels back
+        clampRelIntoRoomShape(it, rr);
+        syncOneItemPixelsFromRel(it, rr);
+
+        setSelected(it);
 
         repaint();
         if (onEditCommit != null) onEditCommit.run();
@@ -199,6 +256,14 @@ public class RoomCanvas extends JPanel {
 
     public void setSelected(FurnitureItem it) {
         selected = it;
+
+        ensureRoomCache();
+        syncRelFromPixelsIfMissing();
+        if (selected != null) {
+            RelRect rr = relById.get(safeId(selected));
+            if (rr != null) syncOneItemPixelsFromRel(selected, rr);
+        }
+
         fireSelectionChanged();
         repaint();
     }
@@ -209,20 +274,15 @@ public class RoomCanvas extends JPanel {
 
     public FurnitureItem hitTest(Point p) {
         if (p == null) return null;
+
         ensureRoomCache();
-        if (cachedRoomBoundsPx == null) return null;
+        syncRelFromPixelsIfMissing();
 
         for (int i = items.size() - 1; i >= 0; i--) {
             FurnitureItem it = items.get(i);
             if (it == null) continue;
 
-            // Transform item to screen rectangles
-            int ix = cachedRoomBoundsPx.x + (int)(it.getX() * ppi);
-            int iy = cachedRoomBoundsPx.y + (int)(it.getY() * ppi);
-            int iw = (int)(it.getW() * ppi);
-            int ih = (int)(it.getH() * ppi);
-
-            Rectangle r = new Rectangle(ix, iy, Math.max(4, iw), Math.max(4, ih));
+            Rectangle r = getItemPixelRect(it);
             if (r.contains(p)) return it;
         }
         return null;
@@ -230,12 +290,22 @@ public class RoomCanvas extends JPanel {
 
     public void setSelectedPosition(int x, int y) {
         if (selected == null) return;
+
         ensureRoomCache();
+        if (cachedRoomBoundsPx == null) return;
 
-        selected.setX(x);
-        selected.setY(y);
+        RelRect rr = relById.get(safeId(selected));
+        if (rr == null) {
+            rr = pixelRectToRel(selected);
+            relById.put(safeId(selected), rr);
+        }
 
-        clampItemIntoRoom(selected);
+        // convert requested pixel pos -> rel pos
+        rr.x = (x - cachedRoomBoundsPx.getX()) / Math.max(1, cachedRoomBoundsPx.getWidth());
+        rr.y = (y - cachedRoomBoundsPx.getY()) / Math.max(1, cachedRoomBoundsPx.getHeight());
+
+        clampRelIntoRoomShape(selected, rr);
+        syncOneItemPixelsFromRel(selected, rr);
 
         repaint();
         fireSelectionChanged();
@@ -244,12 +314,25 @@ public class RoomCanvas extends JPanel {
 
     public void setSelectedSize(int w, int h) {
         if (selected == null) return;
+
         ensureRoomCache();
+        if (cachedRoomBoundsPx == null) return;
 
-        selected.setW(Math.max(1, w));
-        selected.setH(Math.max(1, h));
+        RelRect rr = relById.get(safeId(selected));
+        if (rr == null) {
+            rr = pixelRectToRel(selected);
+            relById.put(safeId(selected), rr);
+        }
 
-        clampItemIntoRoom(selected);
+        rr.w = w / Math.max(1, cachedRoomBoundsPx.getWidth());
+        rr.h = h / Math.max(1, cachedRoomBoundsPx.getHeight());
+
+        // keep usable
+        rr.w = Math.max(10.0 / cachedRoomBoundsPx.getWidth(), rr.w);
+        rr.h = Math.max(10.0 / cachedRoomBoundsPx.getHeight(), rr.h);
+
+        clampRelIntoRoomShape(selected, rr);
+        syncOneItemPixelsFromRel(selected, rr);
 
         repaint();
         fireSelectionChanged();
@@ -282,6 +365,7 @@ public class RoomCanvas extends JPanel {
 
     public void deleteSelected() {
         if (selected == null) return;
+        relById.remove(safeId(selected));
         items.remove(selected);
         selected = null;
         repaint();
@@ -337,7 +421,9 @@ public class RoomCanvas extends JPanel {
 
         paintGrid(g2, w, h);
 
-        ensureRoomCache(); // ✅ ensure cachedRoomBoundsPx/cachedRoomShape exists
+        ensureRoomCache();
+        syncRelFromPixelsIfMissing();
+        syncAllPixelsFromRel(); // keep pixel fields consistent for UI panels
 
         if (cachedRoomBoundsPx != null) {
             int rx = cachedRoomBoundsPx.x;
@@ -383,68 +469,42 @@ public class RoomCanvas extends JPanel {
     }
 
     private void paintGrid(Graphics2D g2, int w, int h) {
-        g2.setColor(new Color(0xE5E7EB));
-        ensureRoomCache();
-        double stepInches = 12.0; // 1ft grid
-        double stepPx = stepInches * ppi;
-        if (stepPx < 10) stepPx = 60.0 * ppi; // 5ft grid if too small
-        
-        if (stepPx > 0) {
-            for (double x = cachedRoomBoundsPx.x; x < cachedRoomBoundsPx.x + cachedRoomBoundsPx.width; x += stepPx) {
-                for (double y = cachedRoomBoundsPx.y; y < cachedRoomBoundsPx.y + cachedRoomBoundsPx.height; y += stepPx) {
-                    g2.fillRect((int)x, (int)y, 1, 1);
-                }
-            }
-        }
+        g2.setColor(new Color(0xEEF2F7));
+        int step = 24;
+        for (int x = 0; x < w; x += step) g2.drawLine(x, 0, x, h);
+        for (int y = 0; y < h; y += step) g2.drawLine(0, y, w, y);
     }
 
     private void paintRulers(Graphics2D g2, int w, int h) {
-        // Subtle background for rulers
-        g2.setColor(new Color(0xF9FAFB));
-        g2.fillRect(0, 0, w, 22);
-        g2.fillRect(0, 0, 22, h);
+        g2.setColor(new Color(0xE5E7EB));
+        g2.fillRect(0, 0, w, 28);
+        g2.fillRect(0, 0, 28, h);
 
         g2.setColor(new Color(0x9CA3AF));
-        g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 10f));
+        g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 10.5f));
 
-        ensureRoomCache();
-        double stepInches = 60.0; // 5ft marks
-        double stepPx = stepInches * ppi;
-        
-        if (stepPx > 0) {
-            for (double d = 0; d < 1000; d += stepInches) {
-                int px = cachedRoomBoundsPx.x + (int)(d * ppi);
-                if (px > w) break;
-                g2.drawLine(px, 22, px, 18);
-                g2.drawString((int)d + "\"", px + 2, 14);
-            }
-            for (double d = 0; d < 1000; d += stepInches) {
-                int py = cachedRoomBoundsPx.y + (int)(d * ppi);
-                if (py > h) break;
-                g2.drawLine(22, py, 18, py);
-                g2.drawString((int)d + "\"", 2, py + 4);
-            }
+        int step = 60;
+        for (int x = 28; x < w; x += step) {
+            g2.drawLine(x, 28, x, 22);
+            g2.drawString(String.valueOf(x - 28), x + 2, 18);
+        }
+        for (int y = 28; y < h; y += step) {
+            g2.drawLine(28, y, 22, y);
+            g2.drawString(String.valueOf(y - 28), 4, y + 4);
         }
 
-        g2.setColor(UiKit.BORDER);
-        g2.drawLine(0, 21, w, 21);
-        g2.drawLine(21, 0, 21, h);
+        g2.setColor(new Color(0xD1D5DB));
+        g2.drawLine(0, 28, w, 28);
+        g2.drawLine(28, 0, 28, h);
     }
 
     private void paintItem(Graphics2D parentG, FurnitureItem it) {
         if (it == null) return;
-        ensureRoomCache();
-        if (cachedRoomBoundsPx == null) return;
-
-        int ix = cachedRoomBoundsPx.x + (int)(it.getX() * ppi);
-        int iy = cachedRoomBoundsPx.y + (int)(it.getY() * ppi);
-        int iw = (int)(it.getW() * ppi);
-        int ih = (int)(it.getH() * ppi);
 
         Graphics2D g2 = (Graphics2D) parentG.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        Rectangle r = new Rectangle(ix, iy, Math.max(1, iw), Math.max(1, ih));
+        Rectangle r = getItemPixelRect(it);
 
         boolean isSel = (it == selected);
 
@@ -461,7 +521,6 @@ public class RoomCanvas extends JPanel {
         boolean round = "TABLE_ROUND".equals(kind);
         boolean chair = "CHAIR".equals(kind);
 
-        // Fill shapes
         g2.setColor(base);
 
         if (round) {
@@ -498,7 +557,6 @@ public class RoomCanvas extends JPanel {
             g2.drawRoundRect(r.x, r.y, r.width, r.height, 8, 8);
         }
 
-        // Shading overlay (uses shadingPercent if present)
         int shade = safeShadingPercent(it);
         if (shade > 0) {
             int alpha = Math.max(0, Math.min(180, (int) Math.round(180.0 * (shade / 100.0))));
@@ -508,17 +566,6 @@ public class RoomCanvas extends JPanel {
             else g2.fillRoundRect(r.x, r.y, r.width, r.height, 8, 8);
         }
 
-        // 2.5D Depth Highlight (Subtle top-left shine)
-        g2.setColor(new Color(255, 255, 255, 40));
-        g2.setStroke(new BasicStroke(1.5f));
-        if (round) {
-            g2.drawArc(r.x + 2, r.y + 2, r.width - 4, r.height - 4, 45, 180);
-        } else {
-            g2.drawLine(r.x + 4, r.y + 2, r.x + r.width - 4, r.y + 2);
-            g2.drawLine(r.x + 2, r.y + 4, r.x + 2, r.y + r.height - 4);
-        }
-
-        // Icon
         String icon = pickIcon(kind, round, chair);
         int minDim = Math.min(r.width, r.height);
         float fontSize = Math.max(12f, Math.min(40f, minDim * 0.5f));
@@ -534,24 +581,12 @@ public class RoomCanvas extends JPanel {
         g2.setColor(Color.WHITE);
         g2.drawString(icon, tx, ty);
 
-        // Selection highlight
-        // Selection highlight with handles
         if (isSel) {
-            g2.setColor(UiKit.PRIMARY);
+            g2.setColor(new Color(0x2563EB));
             g2.setStroke(new BasicStroke(2.0f));
             int pad = 4;
-            Rectangle sr = new Rectangle(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad);
-
-            if (round) g2.drawOval(sr.x, sr.y, sr.width, sr.height);
-            else g2.drawRoundRect(sr.x, sr.y, sr.width, sr.height, 10, 10);
-
-            // Corner handles
-            g2.setColor(Color.WHITE);
-            int hSize = 6;
-            paintHandle(g2, sr.x, sr.y, hSize);
-            paintHandle(g2, sr.x + sr.width, sr.y, hSize);
-            paintHandle(g2, sr.x, sr.y + sr.height, hSize);
-            paintHandle(g2, sr.x + sr.width, sr.y + sr.height, hSize);
+            if (round) g2.drawOval(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad);
+            else g2.drawRoundRect(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad, 10, 10);
         }
 
         g2.dispose();
@@ -568,6 +603,120 @@ public class RoomCanvas extends JPanel {
         } catch (Exception e) {
             return fallback;
         }
+    }
+
+    /* ====================== RELATIVE <-> PIXEL SYNC ====================== */
+
+    private String safeId(FurnitureItem it) {
+        try {
+            String id = it.getId();
+            if (id != null && !id.isBlank()) return id;
+        } catch (Throwable ignored) {}
+        // fallback: stable-ish key using object identity if model has no id
+        return "OBJ@" + System.identityHashCode(it);
+    }
+
+    private void syncRelFromPixelsIfMissing() {
+        if (cachedRoomBoundsPx == null) return;
+        for (FurnitureItem it : items) {
+            if (it == null) continue;
+            String id = safeId(it);
+            if (!relById.containsKey(id)) {
+                relById.put(id, pixelRectToRel(it));
+            }
+        }
+    }
+
+    private RelRect pixelRectToRel(FurnitureItem it) {
+        ensureRoomCache();
+        if (cachedRoomBoundsPx == null) return new RelRect(0.1, 0.1, 0.2, 0.2);
+
+        double roomW = Math.max(1, cachedRoomBoundsPx.getWidth());
+        double roomH = Math.max(1, cachedRoomBoundsPx.getHeight());
+
+        double px = safeInt(it.getX());
+        double py = safeInt(it.getY());
+        double pw = Math.max(1, safeInt(it.getW()));
+        double ph = Math.max(1, safeInt(it.getH()));
+
+        double rx = (px - cachedRoomBoundsPx.getX()) / roomW;
+        double ry = (py - cachedRoomBoundsPx.getY()) / roomH;
+        double rw = pw / roomW;
+        double rh = ph / roomH;
+
+        return new RelRect(rx, ry, rw, rh);
+    }
+
+    private Rectangle getItemPixelRect(FurnitureItem it) {
+        ensureRoomCache();
+        if (cachedRoomBoundsPx == null) {
+            return new Rectangle(safeInt(it.getX()), safeInt(it.getY()),
+                    Math.max(1, safeInt(it.getW())), Math.max(1, safeInt(it.getH())));
+        }
+
+        RelRect rr = relById.get(safeId(it));
+        if (rr == null) {
+            rr = pixelRectToRel(it);
+            relById.put(safeId(it), rr);
+        }
+
+        double roomW = Math.max(1, cachedRoomBoundsPx.getWidth());
+        double roomH = Math.max(1, cachedRoomBoundsPx.getHeight());
+
+        int x = (int) Math.round(cachedRoomBoundsPx.getX() + rr.x * roomW);
+        int y = (int) Math.round(cachedRoomBoundsPx.getY() + rr.y * roomH);
+        int w = (int) Math.round(rr.w * roomW);
+        int h = (int) Math.round(rr.h * roomH);
+
+        w = Math.max(10, w);
+        h = Math.max(10, h);
+
+        return new Rectangle(x, y, w, h);
+    }
+
+    private void syncOneItemPixelsFromRel(FurnitureItem it, RelRect rr) {
+        if (it == null || rr == null) return;
+        Rectangle r = getItemPixelRect(it);
+        it.setX(r.x);
+        it.setY(r.y);
+        it.setW(r.width);
+        it.setH(r.height);
+    }
+
+    private void syncAllPixelsFromRel() {
+        for (FurnitureItem it : items) {
+            if (it == null) continue;
+            RelRect rr = relById.get(safeId(it));
+            if (rr != null) syncOneItemPixelsFromRel(it, rr);
+        }
+    }
+
+    private void clampRelIntoRoomShape(FurnitureItem it, RelRect rr) {
+        ensureRoomCache();
+        if (cachedRoomBoundsPx == null || rr == null) return;
+
+        // first clamp to rectangular bounds (0..1)
+        rr.w = Math.max(rr.w, 10.0 / Math.max(1, cachedRoomBoundsPx.getWidth()));
+        rr.h = Math.max(rr.h, 10.0 / Math.max(1, cachedRoomBoundsPx.getHeight()));
+
+        rr.x = clamp(rr.x, 0, 1 - rr.w);
+        rr.y = clamp(rr.y, 0, 1 - rr.h);
+
+        // then if L-shape: try nudging until pixel rect fits inside shape
+        Rectangle px = getItemPixelRect(it);
+
+        int tries = 0;
+        while (!rectInsideRoom(px) && tries < 250) {
+            // nudge left / down a bit
+            rr.x = clamp(rr.x - 0.005, 0, 1 - rr.w);
+            rr.y = clamp(rr.y + 0.005, 0, 1 - rr.h);
+            px = getItemPixelRect(it);
+            tries++;
+        }
+    }
+
+    private double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     /* ====================== Room boundary helpers ====================== */
@@ -614,30 +763,6 @@ public class RoomCanvas extends JPanel {
                 && cachedRoomShape.contains(rPx.x + rPx.width, rPx.y + rPx.height);
     }
 
-    private void clampItemIntoRoom(FurnitureItem it) {
-        if (roomSpec == null || it == null) return;
-
-        double rw = roomSpec.getWidth();
-        double rl = roomSpec.getLength();
-        
-        String unit = roomSpec.getUnit();
-        if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-            rw *= 12.0;
-            rl *= 12.0;
-        } else if ("m".equalsIgnoreCase(unit.trim())) {
-            rw *= 39.3701;
-            rl *= 39.3701;
-        }
-
-        // Clamp in inches
-        it.setX(clampInt(it.getX(), 0, (int)rw - it.getW()));
-        it.setY(clampInt(it.getY(), 0, (int)rl - it.getH()));
-    }
-
-    private int clampInt(int v, int lo, int hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
-
     private int safeInt(Integer v) { return v == null ? 0 : v; }
 
     /* ====================== Scheme helpers ====================== */
@@ -674,7 +799,7 @@ public class RoomCanvas extends JPanel {
             if (k == null) return "CHAIR";
             String s = String.valueOf(k).trim();
             if (s.isBlank()) return "CHAIR";
-            return s.toUpperCase(Locale.ENGLISH); // ✅ normalize
+            return s.toUpperCase(Locale.ENGLISH);
         } catch (Throwable ignored) {
             return "CHAIR";
         }
@@ -695,7 +820,6 @@ public class RoomCanvas extends JPanel {
     }
 
     private String pickIcon(String kind, boolean round, boolean chair) {
-        // Prefer your enum icons if the kind matches
         try {
             FurnitureKind k = FurnitureKind.valueOf(kind);
             if (k != null && k.iconText != null && !k.iconText.isBlank()) return k.iconText;
@@ -707,70 +831,47 @@ public class RoomCanvas extends JPanel {
         return "⬚";
     }
 
-    /* ====================== Cache builder (so clamp works before paint) ====================== */
+    /* ====================== Cache builder ====================== */
 
     private void ensureRoomCache() {
         if (cachedRoomBoundsPx != null && cachedRoomShape != null) return;
+
         int w = getWidth();
         int h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        int pad = 46;
+        // keep available area sensible
+        int availW = Math.max(MIN_ROOM_PX, w - PAD * 2);
+        int availH = Math.max(MIN_ROOM_PX, h - PAD * 2);
 
         int roomW, roomH;
 
-        int rx, ry;
         if (roomSpec != null && roomSpec.getWidth() > 0 && roomSpec.getLength() > 0) {
-            int availW = w - pad * 2;
-            int availH = h - pad * 2;
-
-            // Normalize room dimensions to inches
             double rw = roomSpec.getWidth();
             double rl = roomSpec.getLength();
-            
-            // Assume "ft" if not specified or "ft"
-            String unit = roomSpec.getUnit();
-            if (unit == null || "ft".equalsIgnoreCase(unit.trim())) {
-                rw *= 12.0;
-                rl *= 12.0;
-            } else if ("m".equalsIgnoreCase(unit.trim())) {
-                rw *= 39.3701;
-                rl *= 39.3701;
-            }
 
             double roomRatio = rw / Math.max(0.0001, rl);
             double screenRatio = (double) availW / Math.max(1, availH);
 
             if (roomRatio > screenRatio) {
                 roomW = availW;
-                roomH = (int) (availW / roomRatio);
+                roomH = (int) Math.round(availW / roomRatio);
             } else {
                 roomH = availH;
-                roomW = (int) (availH * roomRatio);
+                roomW = (int) Math.round(availH * roomRatio);
             }
-            
-            rx = (w - roomW) / 2;
-            ry = (h - roomH) / 2;
-            
-            cachedRoomBoundsPx = new Rectangle(rx, ry, roomW, roomH);
-            cachedRoomShape = buildRoomShapePx(rx, ry, roomW, roomH, roomSpec);
-            ppi = (double) roomW / rw;
         } else {
-            roomW = Math.max(200, w - pad * 2);
-            roomH = Math.max(200, h - pad * 2);
-            rx = (w - roomW) / 2;
-            ry = (h - roomH) / 2;
-            cachedRoomBoundsPx = new Rectangle(rx, ry, roomW, roomH);
-            cachedRoomShape = buildRoomShapePx(rx, ry, roomW, roomH, roomSpec);
-            ppi = 1.0;
+            roomW = availW;
+            roomH = availH;
         }
-    }
 
-    private void paintHandle(Graphics2D g2, int x, int y, int size) {
-        g2.setColor(Color.WHITE);
-        g2.fillOval(x - size / 2, y - size / 2, size, size);
-        g2.setColor(UiKit.PRIMARY);
-        g2.setStroke(new BasicStroke(1.2f));
-        g2.drawOval(x - size / 2, y - size / 2, size, size);
+        roomW = Math.max(MIN_ROOM_PX, roomW);
+        roomH = Math.max(MIN_ROOM_PX, roomH);
+
+        int rx = (w - roomW) / 2;
+        int ry = (h - roomH) / 2;
+
+        cachedRoomBoundsPx = new Rectangle(rx, ry, roomW, roomH);
+        cachedRoomShape = buildRoomShapePx(rx, ry, roomW, roomH, roomSpec);
     }
 }
