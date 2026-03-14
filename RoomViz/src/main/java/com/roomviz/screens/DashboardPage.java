@@ -6,7 +6,6 @@ import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
 import com.roomviz.model.Design;
 import com.roomviz.model.RoomSpec;
-import com.roomviz.model.DesignStatus;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -132,11 +131,11 @@ public class DashboardPage extends JPanel {
 
         int inProgressCount = 0;
         for (Design d : all) {
-            if (d != null && d.getStatus() == DesignStatus.IN_PROGRESS) {
+            if (d != null && d.getItems() != null && !d.getItems().isEmpty()) {
                 inProgressCount++;
             }
         }
-        
+
         long startOfToday = startOfTodayEpochMs();
         int editedToday = 0;
         for (Design d : all) {

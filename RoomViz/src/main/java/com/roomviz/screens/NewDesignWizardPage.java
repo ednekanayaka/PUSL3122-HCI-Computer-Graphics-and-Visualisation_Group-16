@@ -7,7 +7,6 @@ import com.roomviz.data.AppState;
 import com.roomviz.model.Design;
 import com.roomviz.model.RoomSpec;
 import com.roomviz.ui.UiKit;
-import com.roomviz.model.DesignStatus;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -393,8 +392,6 @@ public class NewDesignWizardPage extends JPanel {
         Design d = buildDesignObject(true);
         if (d == null) return;
 
-        d.setStatus(DesignStatus.DRAFT);
-
         appState.getRepo().upsert(d);
         appState.setCurrentDesignId(d.getId());
 
@@ -421,8 +418,6 @@ public class NewDesignWizardPage extends JPanel {
 
         Design d = buildDesignObject(false);
         if (d == null) return;
-
-        d.setStatus(DesignStatus.IN_PROGRESS);
 
         appState.getRepo().upsert(d);
         appState.setCurrentDesignId(d.getId());

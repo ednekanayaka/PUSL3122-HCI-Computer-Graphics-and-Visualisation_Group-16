@@ -10,7 +10,6 @@ import com.roomviz.model.FurnitureKind;
 import com.roomviz.model.FurnitureTemplate;
 import com.roomviz.ui.RoomCanvas;
 import com.roomviz.ui.UiKit;
-import com.roomviz.model.DesignStatus;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -164,14 +163,6 @@ public class Planner2DPage extends JPanel {
     private void saveDesign(String reasonLabel) {
         Design d = appState.getOrCreateCurrentDesign();
         d.setItems(canvas.getItems());
-
-        // if user has started placing/editing items, move Draft -> In Progress automatically
-        if (d.getItems() != null && !d.getItems().isEmpty()) {
-            if (d.getStatus() == DesignStatus.DRAFT) {
-                d.setStatus(DesignStatus.IN_PROGRESS);
-            }
-        }
-
         d.touchUpdatedAtNow();
         appState.getRepo().upsert(d);
 
