@@ -13,6 +13,7 @@ import java.awt.event.FocusEvent;
 import java.awt.geom.RoundRectangle2D;
 
 public class LoginScreen extends JPanel {
+    // LoginScreen: collects credentials and navigates to the app shell
 
     private final JTextField emailField;
     private final JPasswordField passwordField;
