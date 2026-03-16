@@ -9,6 +9,7 @@ import com.roomviz.data.SettingsRepository;
 import com.roomviz.data.UserRepository;
 import com.roomviz.model.User;
 import com.roomviz.model.UserSettings;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -19,11 +20,15 @@ import java.awt.*;
 /**
  * Settings page UI (functional)
  *
- * ✅ Updated:
  * - Profile fields (Full Name, Job Title, Department) are saved to SQLite per user
- * - Preferences (autosave, units, font size, contrast) are saved to per-user settings.json
+ * - Preferences (autosave, units, font size, contrast) are saved to SQLite per user (NO JSON)
  * - Password change uses real authentication (SQLite + PasswordUtil) (no passwordPlain)
- * - Export Data exports the CURRENT USER's designs repo (already per-user)
+ *
+ * - Delete Account deletes:
+ *   1) designs
+ *   2) preferences
+ *   3) the actual user record in SQLite
+ * - Runs in SwingWorker to prevent UI freeze and stuck WAIT cursor
  */
 public class SettingsPage extends JPanel {
 
@@ -56,6 +61,9 @@ public class SettingsPage extends JPanel {
     });
 
     // Accessibility
+    private final JComboBox<String> themeMode = new JComboBox<>(new String[]{
+            "Light", "Dark Blue"
+    });
     private final JComboBox<String> fontSize = new JComboBox<>(new String[]{
             "Small", "Medium", "Large"
     });
@@ -94,6 +102,7 @@ public class SettingsPage extends JPanel {
         gc.gridx = 0;
         gc.gridy = 0;
         gc.weightx = 1;
+        gc.weighty = 1;
         gc.fill = GridBagConstraints.HORIZONTAL;
         gc.anchor = GridBagConstraints.NORTH;
         gc.insets = new Insets(20, 0, 40, 0);
@@ -101,8 +110,7 @@ public class SettingsPage extends JPanel {
         JPanel mainCol = new JPanel();
         mainCol.setOpaque(false);
         mainCol.setLayout(new BoxLayout(mainCol, BoxLayout.Y_AXIS));
-        mainCol.setMaximumSize(new Dimension(800, 9999));
-        mainCol.setPreferredSize(new Dimension(800, 1200));
+        mainCol.setMaximumSize(new Dimension(800, Integer.MAX_VALUE));
 
         mainCol.add(profileCard());
         mainCol.add(Box.createVerticalStrut(20));
@@ -165,7 +173,7 @@ public class SettingsPage extends JPanel {
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("👤", "Profile Information", "Manage your personal details"), BorderLayout.NORTH);
+        card.add(cardTitle(FontAwesome.USER, "Profile Information", "Manage your personal details"), BorderLayout.NORTH);
 
         JPanel form = new JPanel(new GridLayout(2, 2, 16, 16));
         form.setOpaque(false);
@@ -185,7 +193,7 @@ public class SettingsPage extends JPanel {
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("🔒", "Change Password", "Secure your account"), BorderLayout.NORTH);
+        card.add(cardTitle(FontAwesome.LOCK, "Change Password", "Secure your account"), BorderLayout.NORTH);
 
         JPanel form = new JPanel();
         form.setOpaque(false);
@@ -212,7 +220,7 @@ public class SettingsPage extends JPanel {
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("🛠️", "Application Preferences", "Adjust your design experience"), BorderLayout.NORTH);
+        card.add(cardTitle(FontAwesome.WRENCH, "Application Preferences", "Adjust your design experience"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
@@ -276,12 +284,15 @@ public class SettingsPage extends JPanel {
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("👁️", "Accessibility", "Tailor the interface to your needs"), BorderLayout.NORTH);
+        card.add(cardTitle(FontAwesome.EYE, "Accessibility", "Tailor the interface to your needs"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBorder(new EmptyBorder(16, 0, 0, 0));
+
+        body.add(labeledDropdown("Theme Mode", themeMode));
+        body.add(Box.createVerticalStrut(18));
 
         body.add(labeledDropdown("Font Size", fontSize));
         body.add(Box.createVerticalStrut(18));
@@ -324,7 +335,7 @@ public class SettingsPage extends JPanel {
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("❓", "Help & Support", "Get assistance or read docs"), BorderLayout.NORTH);
+        card.add(cardTitle(FontAwesome.QUESTION_CIRCLE, "Help & Support", "Get assistance or read docs"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
@@ -348,19 +359,17 @@ public class SettingsPage extends JPanel {
         card.setLayout(new BorderLayout());
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("⚙️", "Account", "Manage your data and privacy"), BorderLayout.NORTH);
+        card.add(cardTitle(FontAwesome.GEAR, "Account", "Manage your data and privacy"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBorder(new EmptyBorder(16, 0, 0, 0));
 
-        body.add(linkRow("Export Data", this::onExportData));
-        body.add(Box.createVerticalStrut(12));
         body.add(linkRow("Privacy Settings", this::showPrivacy));
         body.add(Box.createVerticalStrut(12));
 
-        JLabel delete = new JLabel("Delete Account (Local Data)");
+        JLabel delete = new JLabel("Delete Account");
         delete.setForeground(UiKit.DANGER);
         delete.setFont(UiKit.scaled(delete, Font.BOLD, 0.98f));
         delete.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -410,7 +419,7 @@ public class SettingsPage extends JPanel {
     /* ======================= LOAD/SAVE ======================= */
 
     private void loadFromRepo() {
-        // Preferences from per-user settings.json
+        // Preferences from DB (per-user)
         UserSettings prefs = (settingsRepo == null) ? UserSettings.defaults() : settingsRepo.reload();
         applyPreferencesToUi(prefs);
 
@@ -439,7 +448,7 @@ public class SettingsPage extends JPanel {
 
         fullName.setText(safe(u.getFullName()));
         email.setText(safe(u.getEmail()));
-        email.setEditable(false); // keep email immutable in this prototype (matches auth key)
+        email.setEditable(false);
 
         jobTitle.setText(safe(u.getJobTitle()));
         String dept = safe(u.getDepartment());
@@ -457,6 +466,8 @@ public class SettingsPage extends JPanel {
         String fs = s.getFontSize();
         fontSize.setSelectedItem((fs == null || fs.isBlank()) ? "Small" : fs);
 
+        themeMode.setSelectedItem(themeCodeToLabel(s.getThemeMode()));
+
         highContrastToggle.setSelected(s.isHighContrast());
         refreshSwitch(highContrastToggle);
     }
@@ -466,6 +477,7 @@ public class SettingsPage extends JPanel {
         s.setAutosaveEnabled(autosaveToggle.isSelected());
         s.setDefaultUnit(unitLabelToCode(String.valueOf(defaultUnits.getSelectedItem())));
         s.setFontSize(String.valueOf(fontSize.getSelectedItem()));
+        s.setThemeMode(themeLabelToCode(String.valueOf(themeMode.getSelectedItem())));
         s.setHighContrast(highContrastToggle.isSelected());
         return s;
     }
@@ -515,13 +527,19 @@ public class SettingsPage extends JPanel {
                 userRepo.updatePasswordById(uid, newPw.getPassword());
             }
 
+            // refresh session user so TopBar updates immediately
+            User fresh = userRepo.findById(uid);
+            if (fresh != null) {
+                session.login(fresh);
+            }
+
         } catch (Exception ex) {
             ex.printStackTrace();
             JOptionPane.showMessageDialog(this, "Failed to save profile/password.");
             return;
         }
 
-        // ===== save preferences to per-user settings.json =====
+        // ===== save preferences to DB (per-user) =====
         UserSettings prefs = collectPreferencesFromUi();
         settingsRepo.save(prefs);
 
@@ -544,64 +562,103 @@ public class SettingsPage extends JPanel {
         confirmPw.setText("");
     }
 
-    private void onExportData() {
-        if (appState == null || appState.getRepo() == null) {
-            JOptionPane.showMessageDialog(this, "Design repository not available.");
+    /**
+     * Deletes the actual user account (SQLite user row),
+     * clears local designs + preferences, logs out, resets cursor, routes to login.
+     */
+    private void onDeleteAccount() {
+        if (session == null || !session.isLoggedIn()) {
+            JOptionPane.showMessageDialog(this, "Not logged in.");
             return;
         }
 
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Export RoomViz Designs");
-        chooser.setSelectedFile(new java.io.File("roomviz-designs-export.json"));
+        User u = session.getCurrentUser();
+        if (u == null) return;
 
-        int res = chooser.showSaveDialog(this);
-        if (res != JFileChooser.APPROVE_OPTION) return;
-
-        java.io.File out = chooser.getSelectedFile();
-        appState.getRepo().exportTo(out);
-
-        JOptionPane.showMessageDialog(
-                this,
-                "Exported designs to:\n" + out.getAbsolutePath(),
-                "Export Complete",
-                JOptionPane.INFORMATION_MESSAGE
-        );
-    }
-
-    private void onDeleteAccount() {
         int ok = JOptionPane.showConfirmDialog(
                 this,
-                "This will remove ALL local data for this user:\n" +
+                "This will PERMANENTLY delete this local account and ALL its data:\n" +
+                        "• Account login (SQLite user)\n" +
                         "• Saved designs\n" +
                         "• Saved preferences\n\n" +
                         "Continue?",
-                "Delete Local Data",
+                "Delete Account",
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.WARNING_MESSAGE
         );
 
         if (ok != JOptionPane.OK_OPTION) return;
 
-        try {
-            if (appState != null && appState.getRepo() != null) {
-                appState.getRepo().clearAll();
-            }
-            if (settingsRepo != null) {
-                settingsRepo.clearAll();
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
+        // show wait cursor immediately
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        if (frame != null) frame.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
 
-        JOptionPane.showMessageDialog(
-                this,
-                "Local data deleted.\nReturning to Login.",
-                "Deleted",
-                JOptionPane.INFORMATION_MESSAGE
-        );
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            Exception error = null;
 
-        if (session != null) session.logout();
-        if (outerRouter != null) outerRouter.show(ScreenKeys.LOGIN);
+            @Override
+            protected Void doInBackground() {
+                try {
+                    // 1) Clear designs + preferences
+                    if (appState != null && appState.getRepo() != null) {
+                        appState.getRepo().clearAll();
+                    }
+                    if (settingsRepo != null) {
+                        settingsRepo.clearAll();
+                    }
+
+                    // 2) Delete the actual SQLite user record (this stops re-login)
+                    if (userRepo != null) {
+                        userRepo.deleteUserById(u.getId());
+                    }
+
+                    // 3) End session
+                    session.logout();
+
+                } catch (Exception ex) {
+                    error = ex;
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                // ALWAYS restore cursor (fixes spinning cursor)
+                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+                if (frame != null) frame.setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+
+                if (error != null) {
+                    error.printStackTrace();
+                    JOptionPane.showMessageDialog(
+                            SettingsPage.this,
+                            "Failed to delete account.\nCheck console for details.",
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                    return;
+                }
+
+                JOptionPane.showMessageDialog(
+                        SettingsPage.this,
+                        "Account deleted.\nReturning to Login.",
+                        "Deleted",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+
+                // Optional: reset UI to default settings (avoids carrying a weird state to login)
+                UiKit.applySettings(UserSettings.defaults());
+                try { SwingUtilities.updateComponentTreeUI(frame); } catch (Exception ignored) {}
+                if (frame != null) {
+                    frame.invalidate();
+                    frame.validate();
+                    frame.repaint();
+                }
+
+                if (outerRouter != null) outerRouter.show(ScreenKeys.LOGIN);
+            }
+        };
+
+        worker.execute();
     }
 
     /* ======================= Help dialogs ======================= */
@@ -675,6 +732,7 @@ public class SettingsPage extends JPanel {
 
         UiKit.styleDropdown(department);
         UiKit.styleDropdown(defaultUnits);
+        UiKit.styleDropdown(themeMode);
         UiKit.styleDropdown(fontSize);
 
         setupSwitch(autosaveToggle);
@@ -718,7 +776,7 @@ public class SettingsPage extends JPanel {
         wrapper.setAlignmentX(0.0f);
 
         JLabel iconLbl = new JLabel(icon);
-        iconLbl.setFont(UiKit.scaled(iconLbl, Font.PLAIN, 1.4f));
+        iconLbl.setFont(FontAwesome.solid(20f));
         iconLbl.setForeground(UiKit.PRIMARY);
 
         JPanel text = new JPanel();
@@ -813,6 +871,7 @@ public class SettingsPage extends JPanel {
         row.setOpaque(false);
         row.setAlignmentX(0.0f);
         row.setMaximumSize(new Dimension(800, 30));
+        row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JLabel l = new JLabel(text);
         l.setFont(UiKit.scaled(l, Font.PLAIN, 0.98f));
@@ -821,27 +880,39 @@ public class SettingsPage extends JPanel {
 
         JLabel arrow = new JLabel("↗");
         arrow.setForeground(UiKit.MUTED);
+        arrow.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         row.add(l, BorderLayout.WEST);
         row.add(arrow, BorderLayout.EAST);
 
-        l.addMouseListener(new java.awt.event.MouseAdapter() {
+        java.awt.event.MouseAdapter click = new java.awt.event.MouseAdapter() {
             @Override public void mouseClicked(java.awt.event.MouseEvent e) {
                 if (onClick != null) onClick.run();
             }
-        });
+        };
+
+        row.addMouseListener(click);
+        l.addMouseListener(click);
+        arrow.addMouseListener(click);
 
         return row;
     }
 
     private void setupSwitch(JToggleButton b) {
         b.setFocusPainted(false);
+        b.setContentAreaFilled(true);
+        b.setBorderPainted(true);
+        b.setOpaque(true);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setPreferredSize(new Dimension(46, 26));
+        b.setHorizontalAlignment(SwingConstants.CENTER);
+        b.setMargin(new Insets(0, 0, 0, 0));
+        b.setPreferredSize(new Dimension(74, 30));
+        b.setMinimumSize(new Dimension(74, 30));
+        b.setMaximumSize(new Dimension(74, 30));
         b.setFont(UiKit.scaled(b, Font.BOLD, 0.80f));
         b.setBorder(BorderFactory.createCompoundBorder(
                 new LineBorder(UiKit.BORDER, 1, true),
-                new EmptyBorder(4, 8, 4, 8)
+                new EmptyBorder(3, 8, 3, 8)
         ));
         refreshSwitch(b);
     }
@@ -850,18 +921,18 @@ public class SettingsPage extends JPanel {
         if (b.isSelected()) {
             b.setBackground(UiKit.PRIMARY);
             b.setForeground(Color.WHITE);
-            b.setText("  ON  ");
+            b.setText("ON");
             b.setBorder(BorderFactory.createCompoundBorder(
                     new LineBorder(UiKit.PRIMARY.darker(), 1, true),
-                    new EmptyBorder(4, 10, 4, 10)
+                    new EmptyBorder(3, 8, 3, 8)
             ));
         } else {
-            b.setBackground(new Color(0xE5E7EB));
-            b.setForeground(new Color(0x374151));
-            b.setText("  OFF  ");
+            b.setBackground(UiKit.TOGGLE_OFF_BG);
+            b.setForeground(UiKit.TOGGLE_OFF_FG);
+            b.setText("OFF");
             b.setBorder(BorderFactory.createCompoundBorder(
-                    new LineBorder(new Color(0xD1D5DB), 1, true),
-                    new EmptyBorder(4, 10, 4, 10)
+                    new LineBorder(UiKit.TOGGLE_OFF_BORDER, 1, true),
+                    new EmptyBorder(3, 8, 3, 8)
             ));
         }
     }
@@ -898,6 +969,21 @@ public class SettingsPage extends JPanel {
             case "m" -> "Meters (m)";
             default -> "Centimeters (cm)";
         };
+    }
+
+    private static String themeLabelToCode(String label) {
+        if (label == null) return "light";
+        if ("Dark Blue".equalsIgnoreCase(label.trim())) return "dark_blue";
+        return "light";
+    }
+
+    private static String themeCodeToLabel(String code) {
+        if (code == null) return "Light";
+        String v = code.trim().toLowerCase();
+        if ("dark_blue".equals(v) || "dark blue".equals(v) || "dark-blue".equals(v) || "dark".equals(v)) {
+            return "Dark Blue";
+        }
+        return "Light";
     }
 
     private static String safe(String s) {

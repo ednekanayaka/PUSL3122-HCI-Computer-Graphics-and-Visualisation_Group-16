@@ -16,4 +16,5 @@ public final class ScreenKeys {
     public static final String SHADING_COLOR = "shadingColor";
     public static final String VIEW_3D = "view3d";
     public static final String SETTINGS = "settings";
+    public static final String CUSTOMERS = "customers";
 }

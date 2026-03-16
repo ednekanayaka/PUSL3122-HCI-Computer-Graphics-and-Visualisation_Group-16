@@ -11,6 +11,7 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.util.HashMap;
 import java.util.Enumeration;
+import java.util.Locale;
 import java.util.Map;
 
 public final class UiKit {
@@ -26,6 +27,25 @@ public final class UiKit {
     private static final Color BASE_TEXT = new Color(0x111827);
     private static final Color BASE_MUTED = new Color(0x6B7280);
     private static final Color BASE_BORDER = new Color(0xE5E7EB);
+    private static final Color BASE_PRIMARY = new Color(0x5B2BFF);
+    private static final Color BASE_PRIMARY_DARK = new Color(0x8E2DE2);
+    private static final Color BASE_CHIP_BG = new Color(0xF3F4F6);
+    private static final Color BASE_CHIP_TEXT = new Color(0x374151);
+    private static final Color BASE_DANGER = new Color(0xDC2626);
+    private static final Color BASE_SUCCESS = new Color(0x10B981);
+
+    // ===== Dark Blue Palette =====
+    private static final Color DB_BG = new Color(0x0B1220);
+    private static final Color DB_WHITE = new Color(0x111B2E);
+    private static final Color DB_TEXT = new Color(0xE5ECFF);
+    private static final Color DB_MUTED = new Color(0x9DB0D3);
+    private static final Color DB_BORDER = new Color(0x25324A);
+    private static final Color DB_PRIMARY = new Color(0x3B82F6);
+    private static final Color DB_PRIMARY_DARK = new Color(0x2563EB);
+    private static final Color DB_CHIP_BG = new Color(0x17243B);
+    private static final Color DB_CHIP_TEXT = new Color(0xCFE0FF);
+    private static final Color DB_DANGER = new Color(0xF87171);
+    private static final Color DB_SUCCESS = new Color(0x34D399);
 
     // ===== High Contrast Palette =====
     private static final Color HC_BG = Color.WHITE;
@@ -33,6 +53,12 @@ public final class UiKit {
     private static final Color HC_TEXT = Color.BLACK;
     private static final Color HC_MUTED = Color.BLACK;
     private static final Color HC_BORDER = Color.BLACK;
+    private static final Color HC_PRIMARY = Color.BLACK;
+    private static final Color HC_PRIMARY_DARK = Color.BLACK;
+    private static final Color HC_CHIP_BG = Color.WHITE;
+    private static final Color HC_CHIP_TEXT = Color.BLACK;
+    private static final Color HC_DANGER = Color.BLACK;
+    private static final Color HC_SUCCESS = Color.BLACK;
 
     // ===== Theme State (mutable) =====
     public static Color BG = BASE_BG;
@@ -41,18 +67,44 @@ public final class UiKit {
     public static Color MUTED = BASE_MUTED;
     public static Color BORDER = BASE_BORDER;
 
-    public static Color PRIMARY = new Color(0x4F46E5);
-    public static Color PRIMARY_DARK = new Color(0x4338CA);
+    public static Color PRIMARY = BASE_PRIMARY;
+    public static Color PRIMARY_DARK = BASE_PRIMARY_DARK;
 
-    public static Color CHIP_BG = new Color(0xF3F4F6);
-    public static Color CHIP_TEXT = new Color(0x374151);
+    public static Color CHIP_BG = BASE_CHIP_BG;
+    public static Color CHIP_TEXT = BASE_CHIP_TEXT;
 
-    public static Color DANGER = new Color(0xDC2626);
-    public static Color SUCCESS = new Color(0x10B981);
+    public static Color DANGER = BASE_DANGER;
+    public static Color SUCCESS = BASE_SUCCESS;
+
+    // ===== Semantic UI Colors (auto-switch light/dark) =====
+    public static Color CARD_HOVER       = new Color(0xFAFAFB);
+    public static Color CHIP_ACTIVE_BG   = new Color(0xEEF2FF);
+    public static Color CHIP_ACTIVE_TEXT  = BASE_PRIMARY_DARK;
+    public static Color PILL_SUCCESS_BG   = new Color(0xDCFCE7);
+    public static Color PILL_SUCCESS_FG   = new Color(0x16A34A);
+    public static Color PILL_WARN_BG      = new Color(0xFFEDD5);
+    public static Color PILL_WARN_FG      = new Color(0xF59E0B);
+    public static Color PILL_PURPLE_BG    = new Color(0xEDE9FE);
+    public static Color PILL_PURPLE_FG    = new Color(0x7C3AED);
+    public static Color META_PILL_BG      = new Color(0xF3F4F6);
+    public static Color META_PILL_FG      = new Color(0x374151);
+    public static Color TIP_BG            = new Color(0xF8FAFC);
+    public static Color TIP_BORDER        = new Color(0xE2E8F0);
+    public static Color SHADOW_ALPHA      = new Color(0, 0, 0, 18);
+    public static Color STATUS_DRAFT_FG   = new Color(0x2563EB);
+    public static Color STEPPER_INACTIVE  = new Color(0xF3F4F6);
+    public static Color ICON_BG           = new Color(0xEEF2FF);
+    public static Color TOGGLE_OFF_BG     = new Color(0xE5E7EB);
+    public static Color TOGGLE_OFF_FG     = new Color(0x374151);
+    public static Color TOGGLE_OFF_BORDER = new Color(0xD1D5DB);
+
+    private static boolean highContrastMode = false;
+    private static boolean darkBlueMode = false;
 
     // ===== Apply settings globally =====
     public static void applySettings(UserSettings s) {
         boolean highContrast = (s != null) && s.isHighContrast();
+        boolean darkBlue = isDarkBlueRequested(s);
         String fontSize = (s == null) ? "Small" : safe(s.getFontSize(), "Small");
 
         // Palette
@@ -63,8 +115,31 @@ public final class UiKit {
             MUTED = HC_MUTED;
             BORDER = HC_BORDER;
 
-            CHIP_BG = Color.WHITE;
-            CHIP_TEXT = Color.BLACK;
+            PRIMARY = HC_PRIMARY;
+            PRIMARY_DARK = HC_PRIMARY_DARK;
+            CHIP_BG = HC_CHIP_BG;
+            CHIP_TEXT = HC_CHIP_TEXT;
+            DANGER = HC_DANGER;
+            SUCCESS = HC_SUCCESS;
+
+            highContrastMode = true;
+            darkBlueMode = false;
+        } else if (darkBlue) {
+            BG = DB_BG;
+            WHITE = DB_WHITE;
+            TEXT = DB_TEXT;
+            MUTED = DB_MUTED;
+            BORDER = DB_BORDER;
+
+            PRIMARY = DB_PRIMARY;
+            PRIMARY_DARK = DB_PRIMARY_DARK;
+            CHIP_BG = DB_CHIP_BG;
+            CHIP_TEXT = DB_CHIP_TEXT;
+            DANGER = DB_DANGER;
+            SUCCESS = DB_SUCCESS;
+
+            highContrastMode = false;
+            darkBlueMode = true;
         } else {
             BG = BASE_BG;
             WHITE = BASE_WHITE;
@@ -72,8 +147,81 @@ public final class UiKit {
             MUTED = BASE_MUTED;
             BORDER = BASE_BORDER;
 
-            CHIP_BG = new Color(0xF3F4F6);
-            CHIP_TEXT = new Color(0x374151);
+            PRIMARY = BASE_PRIMARY;
+            PRIMARY_DARK = BASE_PRIMARY_DARK;
+            CHIP_BG = BASE_CHIP_BG;
+            CHIP_TEXT = BASE_CHIP_TEXT;
+            DANGER = BASE_DANGER;
+            SUCCESS = BASE_SUCCESS;
+
+            highContrastMode = false;
+            darkBlueMode = false;
+        }
+
+        // Semantic colors (depend on palette selected above)
+        if (darkBlue) {
+            CARD_HOVER       = new Color(0x162033);
+            CHIP_ACTIVE_BG   = new Color(0x1E3A8A);
+            CHIP_ACTIVE_TEXT  = new Color(0xBFDBFE);
+            PILL_SUCCESS_BG   = new Color(0x064E3B);
+            PILL_SUCCESS_FG   = new Color(0x34D399);
+            PILL_WARN_BG      = new Color(0x78350F);
+            PILL_WARN_FG      = new Color(0xFBBF24);
+            PILL_PURPLE_BG    = new Color(0x3B0764);
+            PILL_PURPLE_FG    = new Color(0xA78BFA);
+            META_PILL_BG      = new Color(0x1E293B);
+            META_PILL_FG      = new Color(0xCBD5E1);
+            TIP_BG            = new Color(0x0F172A);
+            TIP_BORDER        = new Color(0x334155);
+            SHADOW_ALPHA      = new Color(0, 0, 0, 50);
+            STATUS_DRAFT_FG   = new Color(0x60A5FA);
+            STEPPER_INACTIVE  = new Color(0x1E293B);
+            ICON_BG           = new Color(0x1E3A8A);
+            TOGGLE_OFF_BG     = new Color(0x1F2937);
+            TOGGLE_OFF_FG     = new Color(0xCBD5E1);
+            TOGGLE_OFF_BORDER = new Color(0x334155);
+        } else if (highContrast) {
+            CARD_HOVER       = HC_BG;
+            CHIP_ACTIVE_BG   = HC_WHITE;
+            CHIP_ACTIVE_TEXT  = HC_TEXT;
+            PILL_SUCCESS_BG   = HC_WHITE;
+            PILL_SUCCESS_FG   = HC_TEXT;
+            PILL_WARN_BG      = HC_WHITE;
+            PILL_WARN_FG      = HC_TEXT;
+            PILL_PURPLE_BG    = HC_WHITE;
+            PILL_PURPLE_FG    = HC_TEXT;
+            META_PILL_BG      = HC_WHITE;
+            META_PILL_FG      = HC_TEXT;
+            TIP_BG            = HC_WHITE;
+            TIP_BORDER        = HC_BORDER;
+            SHADOW_ALPHA      = new Color(0, 0, 0, 0);
+            STATUS_DRAFT_FG   = HC_TEXT;
+            STEPPER_INACTIVE  = HC_WHITE;
+            ICON_BG           = HC_WHITE;
+            TOGGLE_OFF_BG     = HC_BG;
+            TOGGLE_OFF_FG     = HC_TEXT;
+            TOGGLE_OFF_BORDER = HC_BORDER;
+        } else {
+            CARD_HOVER       = new Color(0xFAFAFB);
+            CHIP_ACTIVE_BG   = new Color(0xEEF2FF);
+            CHIP_ACTIVE_TEXT  = BASE_PRIMARY_DARK;
+            PILL_SUCCESS_BG   = new Color(0xDCFCE7);
+            PILL_SUCCESS_FG   = new Color(0x16A34A);
+            PILL_WARN_BG      = new Color(0xFFEDD5);
+            PILL_WARN_FG      = new Color(0xF59E0B);
+            PILL_PURPLE_BG    = new Color(0xEDE9FE);
+            PILL_PURPLE_FG    = new Color(0x7C3AED);
+            META_PILL_BG      = new Color(0xF3F4F6);
+            META_PILL_FG      = new Color(0x374151);
+            TIP_BG            = new Color(0xF8FAFC);
+            TIP_BORDER        = new Color(0xE2E8F0);
+            SHADOW_ALPHA      = new Color(0, 0, 0, 18);
+            STATUS_DRAFT_FG   = new Color(0x2563EB);
+            STEPPER_INACTIVE  = new Color(0xF3F4F6);
+            ICON_BG           = new Color(0xEEF2FF);
+            TOGGLE_OFF_BG     = new Color(0xE5E7EB);
+            TOGGLE_OFF_FG     = new Color(0x374151);
+            TOGGLE_OFF_BORDER = new Color(0xD1D5DB);
         }
 
         // Font scale
@@ -82,6 +230,23 @@ public final class UiKit {
         if ("Large".equalsIgnoreCase(fontSize)) scale = 1.20f;
 
         applyGlobalFontScale(scale);
+    }
+
+    public static boolean isHighContrastMode() {
+        return highContrastMode;
+    }
+
+    public static boolean isDarkBlueMode() {
+        return darkBlueMode;
+    }
+
+    private static boolean isDarkBlueRequested(UserSettings s) {
+        if (s == null) return false;
+        String mode = safe(s.getThemeMode(), "light")
+                .toLowerCase(Locale.ENGLISH)
+                .replace('-', '_')
+                .replace(' ', '_');
+        return "dark_blue".equals(mode) || "dark".equals(mode);
     }
 
     /** Call after applySettings() to refresh all currently visible UI */
@@ -224,7 +389,13 @@ public final class UiKit {
 
     public static JButton primaryButton(String text) {
         RoundButton b = new RoundButton(text);
-        b.setBackground(PRIMARY);
+        if (highContrastEnabled()) {
+            b.setBackground(TEXT);
+            b.setGradient(null, null);
+        } else {
+            b.setBackground(PRIMARY);
+            b.setGradient(PRIMARY, PRIMARY_DARK);
+        }
         b.setForeground(Color.WHITE);
         return b;
     }
@@ -242,6 +413,7 @@ public final class UiKit {
 
     public static JButton iconButton(String iconText) {
         RoundButton b = new RoundButton(iconText);
+        b.setFont(FontAwesome.solid(13f));
         b.setBackground(WHITE);
         b.setForeground(TEXT);
         b.setBorder(BorderFactory.createCompoundBorder(
@@ -265,15 +437,29 @@ public final class UiKit {
     public static JComponent chipPrimary(String text) {
         JLabel l = new JLabel(text);
         l.setOpaque(true);
-        l.setBackground(highContrastEnabled() ? WHITE : new Color(0xEEF2FF));
-        l.setForeground(highContrastEnabled() ? TEXT : PRIMARY_DARK);
+        if (highContrastEnabled()) {
+            l.setBackground(WHITE);
+            l.setForeground(TEXT);
+        } else if (isDarkBlueMode()) {
+            l.setBackground(new Color(0x1D4ED8));
+            l.setForeground(new Color(0xEAF2FF));
+        } else {
+            l.setBackground(new Color(0xEEF2FF));
+            l.setForeground(PRIMARY_DARK);
+        }
         l.setFont(scaled(l, Font.BOLD, 0.92f));
         l.setBorder(new EmptyBorder(6, 10, 6, 10));
         return l;
     }
 
     private static boolean highContrastEnabled() {
-        return TEXT.equals(HC_TEXT) && BORDER.equals(HC_BORDER) && BG.equals(HC_BG);
+        return highContrastMode;
+    }
+
+    private static Color placeholderColor() {
+        if (highContrastEnabled()) return TEXT;
+        if (isDarkBlueMode()) return new Color(0x8FA5CC);
+        return new Color(0x9CA3AF);
     }
 
     // ===== Textfield with placeholder =====
@@ -295,15 +481,15 @@ public final class UiKit {
                 new EmptyBorder(8, 12, 8, 12)
         ));
 
-        JLabel icon = new JLabel("🔍");
-        icon.setForeground(new Color(0x9CA3AF));
-        icon.setFont(scaled(icon, Font.PLAIN, 1.1f));
+        JLabel icon = new JLabel(FontAwesome.SEARCH);
+        icon.setForeground(placeholderColor());
+        icon.setFont(FontAwesome.solid(14f));
 
         JTextField tf = new JTextField();
         tf.setText(placeholder);
         tf.setBorder(null);
         tf.setOpaque(false);
-        tf.setForeground(new Color(0x9CA3AF));
+        tf.setForeground(placeholderColor());
         tf.setFont(scaled(tf, Font.PLAIN, 0.95f));
 
         tf.addFocusListener(new FocusAdapter() {
@@ -318,7 +504,7 @@ public final class UiKit {
             public void focusLost(FocusEvent e) {
                 if (tf.getText().trim().isEmpty()) {
                     tf.setText(placeholder);
-                    tf.setForeground(new Color(0x9CA3AF));
+                    tf.setForeground(placeholderColor());
                 }
             }
         });
@@ -332,10 +518,9 @@ public final class UiKit {
         return res;
     }
 
-    // ===== ✅ Input field styling (FIX for "Cannot resolve method inputField") =====
+    // =====  Input field styling  =====
     /**
      * Creates a styled input field matching RoomViz UI.
-     * Label parameter is kept for your existing calls (even if you don't use it visually here).
      */
     public static JTextField inputField(String label, String value) {
         JTextField tf = new JTextField(value == null ? "" : value);
@@ -355,7 +540,7 @@ public final class UiKit {
         return inputField("", value);
     }
 
-    // ===== ✅ Dropdown styling (FIX for "Cannot resolve method styleDropdown") =====
+    // ===== Dropdown styling (FIX for "Cannot resolve method styleDropdown") =====
     public static <T> JComboBox<T> styleDropdown(JComboBox<T> combo) {
         if (combo == null) return null;
 
@@ -377,8 +562,12 @@ public final class UiKit {
                 JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
 
                 if (list != null) {
-                    list.setSelectionBackground(highContrastEnabled() ? Color.BLACK : new Color(0xEEF2FF));
-                    list.setSelectionForeground(highContrastEnabled() ? Color.WHITE : TEXT);
+                    Color selectionBg = highContrastEnabled()
+                            ? Color.BLACK
+                            : (isDarkBlueMode() ? new Color(0x1E3A8A) : new Color(0xEEF2FF));
+                    Color selectionFg = highContrastEnabled() ? Color.WHITE : TEXT;
+                    list.setSelectionBackground(selectionBg);
+                    list.setSelectionForeground(selectionFg);
                     list.setBackground(WHITE);
                     list.setForeground(TEXT);
                     list.setBorder(new EmptyBorder(6, 6, 6, 6));

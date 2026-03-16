@@ -1,4 +1,3 @@
-// (FULL FILE) src/main/java/com/roomviz/ui/Mini2DPreviewPanel.java
 package com.roomviz.ui;
 
 import com.roomviz.model.Design;
@@ -161,7 +160,8 @@ public class Mini2DPreviewPanel extends JPanel {
         if (rot != 0) {
             double cx = r.getX() + r.getWidth() / 2.0;
             double cy = r.getY() + r.getHeight() / 2.0;
-            g2.rotate(Math.toRadians(rot), cx, cy);
+            // Flip rotation direction in 2D so it matches 3D convention
+            g2.rotate(Math.toRadians(-rot), cx, cy);
         }
 
         String kind = safeKind(it);

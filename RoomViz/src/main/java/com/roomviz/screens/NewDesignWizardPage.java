@@ -1,24 +1,30 @@
+// (FULL FILE) — paste this entire file exactly as-is:
 package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
+import com.roomviz.data.Session;
 import com.roomviz.data.SettingsRepository;
+import com.roomviz.data.UserRepository;
 import com.roomviz.model.Design;
 import com.roomviz.model.DesignStatus;
 import com.roomviz.model.RoomSpec;
+import com.roomviz.model.User;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.util.UUID;
 
 /**
- * New Design Wizard page (Figma-like)
- * Step 1: now creates/saves a Design into repository and navigates to Design Details.
+ * New Design Wizard page
+ *  Admin can create designs for customers (owner_user_id)
+ *  Customer cannot create designs (view-only role)
  */
 public class NewDesignWizardPage extends JPanel {
 
@@ -36,7 +42,7 @@ public class NewDesignWizardPage extends JPanel {
 
     // Step 1 fields
     private final JTextField designName = new JTextField();
-    private final JTextField customerName = new JTextField();
+    private final JTextField customerName = new JTextField(); // used as "Customer Email" for admin
     private final JTextArea notes = new JTextArea(5, 40);
 
     // Step 2 fields
@@ -50,18 +56,19 @@ public class NewDesignWizardPage extends JPanel {
     // Step 4 fields
     private final JComboBox<String> colorScheme = new JComboBox<>(new String[]{"Neutral Tones", "Warm Tones", "Cool Tones", "Monochrome", "Pastels"});
 
-    // ✅ Step 1 shared app state (repo + current selection)
     private final AppState appState;
     private final SettingsRepository settingsRepo;
+    private final UserRepository userRepo;
+    private final Session session;
 
     // Step 3 (L-Shape extra fields)
     private final JTextField lCutWidth = new JTextField();
     private final JTextField lCutLength = new JTextField();
     private final JPanel lShapeDimsWrap = new JPanel();
 
-    // placeholders (must match what you set below)
+    // placeholders
     private static final String PH_DESIGN = "e.g., Modern Living Room Redesign";
-    private static final String PH_CUSTOMER = "e.g., John Smith";
+    private static final String PH_CUSTOMER_EMAIL = "e.g., customer@email.com";
     private static final String PH_WIDTH = "e.g., 24";
     private static final String PH_LENGTH = "e.g., 18";
     private static final String PH_NOTES = "Add any additional notes or requirements for this design...";
@@ -70,22 +77,44 @@ public class NewDesignWizardPage extends JPanel {
 
     // Existing constructor kept (fallback/no persistence)
     public NewDesignWizardPage(AppFrame frame, Router router) {
-        this(frame, router, null, null);
+        this(frame, router, null, null, null, null);
     }
 
-    // New constructor used by ShellScreen
     public NewDesignWizardPage(AppFrame frame, Router router, AppState appState) {
-        this(frame, router, appState, null);
+        this(frame, router, appState, null, null, null);
     }
 
     public NewDesignWizardPage(AppFrame frame, Router router, AppState appState, SettingsRepository settingsRepo) {
+        this(frame, router, appState, settingsRepo, null, null);
+    }
+
+    // (admin ownership support)
+    public NewDesignWizardPage(AppFrame frame, Router router, AppState appState,
+                               SettingsRepository settingsRepo, UserRepository userRepo, Session session) {
         this.appState = appState;
         this.settingsRepo = settingsRepo;
+        this.userRepo = userRepo;
+        this.session = session;
 
         setLayout(new BorderLayout());
         setOpaque(false);
 
-        // Centered container to limit width for responsiveness
+        // Block customers from creating designs
+        if (session != null && session.isLoggedIn()) {
+            User u = session.getCurrentUser();
+            if (u != null && !u.isAdmin()) {
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(
+                            this,
+                            "Customers cannot create new designs.\nYou can only view designs assigned to your account.",
+                            "View-only access",
+                            JOptionPane.INFORMATION_MESSAGE
+                    );
+                    if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
+                });
+            }
+        }
+
         JPanel formCenterWrap = new JPanel(new GridBagLayout());
         formCenterWrap.setOpaque(false);
 
@@ -118,23 +147,16 @@ public class NewDesignWizardPage extends JPanel {
 
         add(scroller, BorderLayout.CENTER);
 
-        // ✅ Apply default units from Settings
         applyDefaultUnitFromSettings();
-
         setStep(1);
     }
 
-    private boolean isHighContrast() {
-        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
-    }
+    private boolean isHighContrast() { return UiKit.isHighContrastMode(); }
+    private Color placeholderColor() { return isHighContrast() ? UiKit.TEXT : UiKit.MUTED; }
+    private Color subMuted() { return isHighContrast() ? UiKit.TEXT : UiKit.MUTED; }
 
-    private Color placeholderColor() {
-        return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
-    }
-
-    private Color subMuted() {
-        // sometimes UiKit.MUTED is enough; but this keeps strong readability in HC
-        return isHighContrast() ? UiKit.TEXT : UiKit.MUTED;
+    private boolean isAdmin() {
+        return session != null && session.isLoggedIn() && session.getCurrentUser() != null && session.getCurrentUser().isAdmin();
     }
 
     /* ========================= Header ========================= */
@@ -146,7 +168,7 @@ public class NewDesignWizardPage extends JPanel {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        UiKit.RoundedPanel icon = new UiKit.RoundedPanel(10, isHighContrast() ? UiKit.WHITE : new Color(0xEEF2FF));
+        UiKit.RoundedPanel icon = new UiKit.RoundedPanel(10, UiKit.ICON_BG);
         icon.setBorderPaint(isHighContrast() ? UiKit.BORDER : new Color(0xC7D2FE));
         icon.setPreferredSize(new Dimension(32, 32));
         icon.setLayout(new GridBagLayout());
@@ -178,23 +200,25 @@ public class NewDesignWizardPage extends JPanel {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
 
-        JButton saveDraft = UiKit.ghostButton("💾  Save as Draft");
-        saveDraft.setFont(UiKit.scaled(saveDraft, Font.PLAIN, 1.00f));
-        saveDraft.addActionListener(e -> onSaveDraft(router));
+        // ✅ Admin-only controls (customers should never see create/import actions)
+        if (isAdmin()) {
+            JButton saveDraft = UiKit.ghostButton("💾  Save as Draft");
+            saveDraft.setFont(UiKit.scaled(saveDraft, Font.PLAIN, 1.00f));
+            saveDraft.addActionListener(e -> onSaveDraft(router));
 
-        JButton close = UiKit.iconButton("✕");
-        close.setToolTipText("Close wizard");
-        close.addActionListener(e -> router.show(ScreenKeys.DESIGN_LIBRARY));
+            JButton importDesigns = UiKit.ghostButton("Import");
+            importDesigns.setFont(UiKit.scaled(importDesigns, Font.PLAIN, 1.00f));
+            importDesigns.setToolTipText("Import RoomViz export JSON");
+            importDesigns.addActionListener(e -> onImportData(router));
 
-        right.add(saveDraft);
-        right.add(close);
+            right.add(saveDraft);
+            right.add(importDesigns);
+        }
 
         row.add(left, BorderLayout.WEST);
         row.add(right, BorderLayout.EAST);
         return row;
     }
-
-    /* ========================= Stepper wrapper ========================= */
 
     private JComponent stepperWrap() {
         UiKit.RoundedPanel wrap = new UiKit.RoundedPanel(14, UiKit.WHITE);
@@ -204,8 +228,6 @@ public class NewDesignWizardPage extends JPanel {
         wrap.add(stepper, BorderLayout.CENTER);
         return wrap;
     }
-
-    /* ========================= Center Card ========================= */
 
     private JComponent centerCard() {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
@@ -242,8 +264,6 @@ public class NewDesignWizardPage extends JPanel {
         card.add(body, BorderLayout.CENTER);
         return card;
     }
-
-    /* ========================= Bottom Nav ========================= */
 
     private JComponent bottomNav(Router router) {
         JPanel row = new JPanel(new BorderLayout());
@@ -283,11 +303,19 @@ public class NewDesignWizardPage extends JPanel {
         p.add(fieldBlock("🏷️ Design Name *", hint(PH_DESIGN, designName)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(fieldBlock("👤 Customer Name *", hint(PH_CUSTOMER, customerName)));
-        p.add(Box.createVerticalStrut(12));
+        // Admin must assign to a real customer account (by email)
+        if (isAdmin()) {
+            p.add(fieldBlock("👤 Customer Email *", hint(PH_CUSTOMER_EMAIL, customerName)));
+            p.add(Box.createVerticalStrut(12));
+
+            JLabel help = new JLabel("This customer will be able to view this design when they log in.");
+            help.setForeground(subMuted());
+            help.setFont(UiKit.scaled(help, Font.PLAIN, 0.90f));
+            p.add(help);
+            p.add(Box.createVerticalStrut(12));
+        }
 
         p.add(textAreaBlock("📝 Project Notes", PH_NOTES, notes));
-
         return p;
     }
 
@@ -318,7 +346,6 @@ public class NewDesignWizardPage extends JPanel {
         p.add(dropdownBlock("💠 Room Shape *", roomShape));
         p.add(Box.createVerticalStrut(20));
 
-        // --- L-shape dimensions block (shown only if L-Shape selected) ---
         lShapeDimsWrap.setOpaque(false);
         lShapeDimsWrap.setLayout(new BoxLayout(lShapeDimsWrap, BoxLayout.Y_AXIS));
 
@@ -344,10 +371,7 @@ public class NewDesignWizardPage extends JPanel {
 
         p.add(lShapeDimsWrap);
 
-        // Default visibility
         updateLShapeVisibility();
-
-        // When user changes shape, show/hide inputs
         roomShape.addActionListener(e -> updateLShapeVisibility());
 
         return p;
@@ -372,13 +396,9 @@ public class NewDesignWizardPage extends JPanel {
         currentStep = step;
         stepper.setActive(step);
 
-        if (nextBtn instanceof UiKit.RoundButton) {
-            UiKit.RoundButton rb = (UiKit.RoundButton) nextBtn;
-            if (step == 4) {
-                rb.setGradient(new Color(0x6366F1), new Color(0x4338CA));
-            } else {
-                rb.setGradient(null, null); // Reset to primary colors
-            }
+        if (nextBtn instanceof UiKit.RoundButton rb) {
+            if (step == 4) rb.setGradient(new Color(0x6366F1), new Color(0x4338CA));
+            else rb.setGradient(null, null);
         }
 
         switch (step) {
@@ -428,23 +448,72 @@ public class NewDesignWizardPage extends JPanel {
         repaint();
     }
 
-    /* ========================= Step 1 actions ========================= */
+    /* ========================= actions ========================= */
+
+    private void onImportData(Router router) {
+        if (!isAdmin()) {
+            JOptionPane.showMessageDialog(this,
+                    "Import is admin-only.",
+                    "Access restricted", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        if (appState == null || appState.getRepo() == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Design repository not available.",
+                    "Cannot import", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import RoomViz Designs");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
+
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) return;
+
+        java.io.File in = chooser.getSelectedFile();
+        int importedCount = appState.getRepo().importFrom(in);
+
+        if (importedCount <= 0) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not import designs.\nPlease select a valid RoomViz export JSON file.",
+                    "Import Failed", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        java.util.List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
+        if (!all.isEmpty()) appState.setCurrentDesignId(all.get(0).getId());
+
+        JOptionPane.showMessageDialog(this,
+                "Imported " + importedCount + " design(s) from:\n" + in.getAbsolutePath(),
+                "Import Complete", JOptionPane.INFORMATION_MESSAGE);
+
+        if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
+    }
 
     private void onSaveDraft(Router router) {
+        if (!isAdmin()) {
+            JOptionPane.showMessageDialog(this,
+                    "Save Draft is admin-only.",
+                    "Access restricted", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         if (appState == null) {
             JOptionPane.showMessageDialog(this,
-                    "AppState not available (wire this screen with the 3-arg constructor).",
+                    "AppState not available (wire this screen with the correct constructor).",
                     "Cannot save", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        // allow saving drafts with only minimal info
-        String dName = cleanField(designName, PH_DESIGN);
-        String cName = cleanField(customerName, PH_CUSTOMER);
+        int ownerId = resolveOwnerCustomerId();
+        if (ownerId <= 0) return;
 
-        if (dName.isEmpty() || cName.isEmpty()) {
+        String dName = cleanField(designName, PH_DESIGN);
+        if (dName.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "Please fill Design Name and Customer Name to save a draft.",
+                    "Please fill Design Name to save a draft.",
                     "Missing fields", JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -454,54 +523,151 @@ public class NewDesignWizardPage extends JPanel {
 
         d.setStatus(DesignStatus.DRAFT);
 
-        appState.getRepo().upsert(d);
+        boolean ok = appState.getRepo().upsertForOwner(d, ownerId);
+
+        if (!ok) {
+            JOptionPane.showMessageDialog(this, "Failed to save draft.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         appState.setCurrentDesignId(d.getId());
 
         JOptionPane.showMessageDialog(this,
-                "Draft saved ✅",
+                "Draft saved",
                 "Saved", JOptionPane.INFORMATION_MESSAGE);
 
+        resetForm();
         router.show(ScreenKeys.DESIGN_DETAILS);
     }
 
     private void onFinish(Router router) {
         if (appState == null) {
             JOptionPane.showMessageDialog(this,
-                    "AppState not available (wire this screen with the 3-arg constructor).",
+                    "AppState not available (wire this screen with the correct constructor).",
                     "Cannot finish", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        if (!validateStep(1) || !validateStep(2) || !validateStep(3) || !validateStep(4)) {
-            return;
-        }
+        if (!validateStep(1) || !validateStep(2) || !validateStep(3) || !validateStep(4)) return;
 
         Design d = buildDesignObject(false);
         if (d == null) return;
 
         d.setStatus(DesignStatus.IN_PROGRESS);
 
-        appState.getRepo().upsert(d);
+        boolean ok;
+        if (isAdmin()) {
+            int ownerId = resolveOwnerCustomerId();
+            if (ownerId <= 0) return;
+            ok = appState.getRepo().upsertForOwner(d, ownerId);
+        } else {
+            // customers should never get here, but keep safe fallback
+            ok = appState.getRepo().upsert(d);
+        }
+
+        if (!ok) {
+            JOptionPane.showMessageDialog(this, "Failed to create design.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         appState.setCurrentDesignId(d.getId());
 
         JOptionPane.showMessageDialog(this,
-                "Design created ✅",
+                "Design created",
                 "Success", JOptionPane.INFORMATION_MESSAGE);
 
+        resetForm();
         router.show(ScreenKeys.PLANNER_2D);
+    }
+
+    private void resetForm() {
+        // Step 1 fields
+        designName.setText(PH_DESIGN);
+        designName.setForeground(placeholderColor());
+        customerName.setText(PH_CUSTOMER_EMAIL);
+        customerName.setForeground(placeholderColor());
+        notes.setText(PH_NOTES);
+        notes.setForeground(placeholderColor());
+
+        // Step 2 fields
+        roomWidth.setText(PH_WIDTH);
+        roomWidth.setForeground(placeholderColor());
+        roomLength.setText(PH_LENGTH);
+        roomLength.setForeground(placeholderColor());
+        unit.setSelectedIndex(0);
+
+        // Step 3 fields
+        roomShape.setSelectedIndex(0);
+        lCutWidth.setText("");
+        lCutLength.setText("");
+        updateLShapeVisibility();
+
+        // Step 4 fields
+        colorScheme.setSelectedIndex(0);
+
+        // Reset to step 1
+        setStep(1);
+    }
+
+    /** Admin must assign to an existing customer account (email). */
+    private int resolveOwnerCustomerId() {
+        if (!isAdmin()) return -1;
+
+        if (userRepo == null) {
+            JOptionPane.showMessageDialog(this,
+                    "User repository not wired to this screen.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            return -1;
+        }
+
+        String email = cleanField(customerName, PH_CUSTOMER_EMAIL).toLowerCase().trim();
+        if (email.isEmpty() || !email.contains("@")) {
+            JOptionPane.showMessageDialog(this,
+                    "Please enter a valid Customer Email.\n(Example: customer@email.com)",
+                    "Missing customer", JOptionPane.WARNING_MESSAGE);
+            return -1;
+        }
+
+        User customer = userRepo.findByEmail(email);
+        if (customer == null) {
+            JOptionPane.showMessageDialog(this,
+                    "No customer account found for:\n" + email + "\n\nAsk the customer to register first.",
+                    "Customer not found", JOptionPane.WARNING_MESSAGE);
+            return -1;
+        }
+
+        if (customer.isAdmin()) {
+            JOptionPane.showMessageDialog(this,
+                    "You entered an admin email.\nPlease enter a CUSTOMER email.",
+                    "Invalid customer", JOptionPane.WARNING_MESSAGE);
+            return -1;
+        }
+
+        return customer.getId();
     }
 
     private boolean validateStep(int step) {
         if (step == 1) {
             String dn = cleanField(designName, PH_DESIGN);
-            String cn = cleanField(customerName, PH_CUSTOMER);
-            if (dn.isEmpty() || cn.isEmpty()) {
+            if (dn.isEmpty()) {
                 JOptionPane.showMessageDialog(this,
-                        "Please fill Design Name and Customer Name.",
+                        "Please fill Design Name.",
                         "Missing fields", JOptionPane.WARNING_MESSAGE);
                 return false;
             }
+
+            if (isAdmin()) {
+                String ce = cleanField(customerName, PH_CUSTOMER_EMAIL);
+                if (ce.isEmpty() || !ce.contains("@")) {
+                    JOptionPane.showMessageDialog(this,
+                            "Please enter a valid Customer Email.",
+                            "Missing customer", JOptionPane.WARNING_MESSAGE);
+                    return false;
+                }
+                if (resolveOwnerCustomerId() <= 0) return false;
+            }
         }
+
         if (step == 2) {
             String w = cleanField(roomWidth, PH_WIDTH);
             String l = cleanField(roomLength, PH_LENGTH);
@@ -522,8 +688,30 @@ public class NewDesignWizardPage extends JPanel {
                 return false;
             }
         }
+
         if (step == 3) {
             String shape = (String) roomShape.getSelectedItem();
+
+            // Square validation (must be equal sides)
+            if ("Square".equalsIgnoreCase(shape)) {
+                try {
+                    double outerW = Double.parseDouble(cleanField(roomWidth, PH_WIDTH));
+                    double outerL = Double.parseDouble(cleanField(roomLength, PH_LENGTH));
+                    if (Math.abs(outerW - outerL) > 1e-6) {
+                        JOptionPane.showMessageDialog(this,
+                                "Square rooms require Width and Length to be equal.\nPlease adjust the dimensions (Step 2).",
+                                "Invalid Square dimensions", JOptionPane.WARNING_MESSAGE);
+                        return false;
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this,
+                            "Please enter valid Width and Length first (Step 2).",
+                            "Missing dimensions", JOptionPane.WARNING_MESSAGE);
+                    return false;
+                }
+            }
+
+            // L-Shape validation
             if ("L-Shape".equalsIgnoreCase(shape)) {
                 String cw = cleanField(lCutWidth, PH_LCUT_W);
                 String cl = cleanField(lCutLength, PH_LCUT_L);
@@ -563,10 +751,8 @@ public class NewDesignWizardPage extends JPanel {
 
     private Design buildDesignObject(boolean draftMode) {
         String dName = cleanField(designName, PH_DESIGN);
-        String cName = cleanField(customerName, PH_CUSTOMER);
         String note = cleanArea(notes, PH_NOTES);
 
-        // for draft, width/length can be empty (but if provided, validate)
         double w = 0;
         double l = 0;
 
@@ -596,9 +782,22 @@ public class NewDesignWizardPage extends JPanel {
         String shape = (String) roomShape.getSelectedItem();
         String scheme = (String) colorScheme.getSelectedItem();
 
+        // Safety: if Square selected and both dims exist, force equal sides
+        if ("Square".equalsIgnoreCase(shape) && w > 0 && l > 0) {
+            if (Math.abs(w - l) > 1e-6) {
+                if (!draftMode) {
+                    JOptionPane.showMessageDialog(this,
+                            "Square rooms require Width and Length to be equal.\nPlease adjust dimensions.",
+                            "Invalid Square dimensions", JOptionPane.WARNING_MESSAGE);
+                    return null;
+                } else {
+                    l = w;
+                }
+            }
+        }
+
         RoomSpec spec = new RoomSpec(w, l, u, shape, scheme);
 
-        // Save L-Shape extra values (only if L-Shape)
         if ("L-Shape".equalsIgnoreCase(shape)) {
             String cw = cleanField(lCutWidth, PH_LCUT_W);
             String cl = cleanField(lCutLength, PH_LCUT_L);
@@ -608,16 +807,31 @@ public class NewDesignWizardPage extends JPanel {
                 double cutL = Double.parseDouble(cl);
                 spec.setLCutWidth(cutW);
                 spec.setLCutLength(cutL);
-                spec.setLCorner("TOP_RIGHT"); // default
+                spec.setLCorner("TOP_RIGHT");
             } catch (Exception ignored) {
-                // draft mode might allow empty, but finish validation prevents this anyway
+                // keep defaults for draft/incomplete
             }
+        } else {
+            spec.setLCutWidth(0);
+            spec.setLCutLength(0);
+            spec.setLCorner("TOP_RIGHT");
         }
 
         Design d = new Design();
         d.setId(UUID.randomUUID().toString());
-        d.setDesignName(dName);
-        d.setCustomerName(cName);
+
+        // ✅ Use setName() (matches your 3D page expecting getName())
+        d.setName(dName);
+
+        // admin stores customer email; customer stores their name (but customers are blocked anyway)
+        if (isAdmin()) {
+            d.setCustomerName(cleanField(customerName, PH_CUSTOMER_EMAIL));
+        } else if (session != null && session.getCurrentUser() != null) {
+            d.setCustomerName(session.getCurrentUser().getFullName());
+        } else {
+            d.setCustomerName("");
+        }
+
         d.setNotes(note);
         d.setRoomSpec(spec);
 
@@ -669,27 +883,27 @@ public class NewDesignWizardPage extends JPanel {
     private JComponent fieldBlock(String labelStr, JComponent field) {
         JPanel b = new JPanel(new GridBagLayout());
         b.setOpaque(false);
-        
+
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(0, 0, 0, 16);
-        
+
         JLabel l = label(labelStr);
         l.setPreferredSize(new Dimension(160, 20));
         l.setMinimumSize(new Dimension(160, 20));
-        
+
         gbc.weightx = 0;
         b.add(l, gbc);
-        
+
         gbc.weightx = 1.0;
         gbc.insets = new Insets(0, 0, 0, 0);
         b.add(field, gbc);
-        
+
         return b;
     }
 
-    private JComponent dropdownBlock(String labelStr, JComponent dropdown) {
-        UiKit.styleDropdown((JComboBox<?>) dropdown);
+    private JComponent dropdownBlock(String labelStr, JComboBox<?> dropdown) {
+        UiKit.styleDropdown(dropdown);
         return fieldBlock(labelStr, dropdown);
     }
 
@@ -791,7 +1005,6 @@ public class NewDesignWizardPage extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
-
     /* ========================= Stepper ========================= */
 
     private class Stepper extends JPanel {
@@ -799,7 +1012,8 @@ public class NewDesignWizardPage extends JPanel {
 
         Stepper() {
             setOpaque(false);
-            setLayout(new GridLayout(1, STEPS, 12, 0));
+            // ✅ FIX: we add (STEPS * 2 - 1) components: step, line, step, line, ...
+            setLayout(new GridLayout(1, (STEPS * 2) - 1, 12, 0));
             rebuild();
         }
 
@@ -824,14 +1038,14 @@ public class NewDesignWizardPage extends JPanel {
         private JComponent line(int afterStep) {
             JPanel p = new JPanel(new GridBagLayout());
             p.setOpaque(false);
-            
+
             boolean isPassed = afterStep < this.active;
-            Color c = isPassed ? UiKit.PRIMARY : (isHighContrast() ? UiKit.BORDER : new Color(0xE5E7EB));
-            
+            Color c = isPassed ? UiKit.PRIMARY : UiKit.BORDER;
+
             JPanel line = new JPanel();
             line.setBackground(c);
             line.setPreferredSize(new Dimension(40, 2));
-            
+
             p.add(line);
             return p;
         }
@@ -843,7 +1057,7 @@ public class NewDesignWizardPage extends JPanel {
             boolean done = number < active;
             boolean isActive = number == active;
 
-            Color circleFill = isActive ? UiKit.PRIMARY : (done ? UiKit.PRIMARY_DARK : (isHighContrast() ? UiKit.WHITE : new Color(0xF3F4F6)));
+            Color circleFill = isActive ? UiKit.PRIMARY : (done ? UiKit.PRIMARY_DARK : UiKit.STEPPER_INACTIVE);
 
             UiKit.RoundedPanel circle = new UiKit.RoundedPanel(999, circleFill);
             circle.setBorderPaint(isHighContrast() ? UiKit.BORDER : (isActive ? UiKit.PRIMARY : null));
@@ -851,7 +1065,7 @@ public class NewDesignWizardPage extends JPanel {
             circle.setLayout(new GridBagLayout());
 
             JLabel n = new JLabel(done ? "✓" : String.valueOf(number));
-            n.setForeground((isActive || done) ? Color.WHITE : (isHighContrast() ? UiKit.TEXT : new Color(0x6B7280)));
+            n.setForeground((isActive || done) ? Color.WHITE : (isHighContrast() ? UiKit.TEXT : UiKit.MUTED));
             n.setFont(UiKit.scaled(n, Font.BOLD, 0.95f));
             circle.add(n);
 

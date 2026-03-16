@@ -1,8 +1,6 @@
-// (FULL FILE) — paste this entire file exactly as-is:
 package com.roomviz.ui;
 
 import com.roomviz.model.FurnitureItem;
-import com.roomviz.model.FurnitureKind;
 import com.roomviz.model.FurnitureTemplate;
 import com.roomviz.model.RoomSpec;
 
@@ -32,7 +30,7 @@ public class RoomCanvas extends JPanel {
     private Shape cachedRoomShape = null;
     private Rectangle cachedRoomBoundsPx = null;
 
-    // ✅ NEW: Saved layout bounds from the Design (used to convert old pixel coords reliably on load)
+    //  Saved layout bounds from the Design (used to convert old pixel coords reliably on load)
     // If a design was saved in fullscreen, and opened in a smaller window, this prevents "push out" drift.
     private Rectangle legacyLayoutBoundsPx = null;
 
@@ -45,11 +43,11 @@ public class RoomCanvas extends JPanel {
     // delete hook (keyboard delete)
     private Runnable onDeleteRequested = null;
 
-    // ✅ Room cache safety
+    //  Room cache safety
     private static final int MIN_ROOM_PX = 80;
     private static final int PAD = 46;
 
-    // ✅ Canvas minimum size (prevents “window becomes a point”)
+    //  Canvas minimum size (prevents “window becomes a point”)
     private static final int MIN_CANVAS_W = 900;
     private static final int MIN_CANVAS_H = 600;
 
@@ -170,7 +168,7 @@ public class RoomCanvas extends JPanel {
             }
         });
 
-        // ✅ On resize: do NOT scale the model.
+        //  On resize: do NOT scale the model.
         // Just rebuild cache and repaint. Rel coords stay stable.
         addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) {
@@ -188,7 +186,7 @@ public class RoomCanvas extends JPanel {
         return new Dimension(MIN_CANVAS_W, MIN_CANVAS_H);
     }
 
-    // ✅ NEW: called by Planner2DPage before loading items
+    // called by Planner2DPage before loading items
     public void setLegacyLayoutBounds(Rectangle legacyBounds) {
         this.legacyLayoutBoundsPx = legacyBounds;
     }
@@ -218,11 +216,16 @@ public class RoomCanvas extends JPanel {
 
     public void setItems(List<FurnitureItem> items) {
         this.items = (items == null) ? new ArrayList<>() : items;
+
+        // When replacing the whole list (load / undo / redo), the rel map must match the restored pixels.
+        // Otherwise, syncAllPixelsFromRel() will overwrite restored x/y with stale rel values.
+        relById.clear();
+
         if (selected != null && !this.items.contains(selected)) selected = null;
 
         ensureRoomCache();
-        syncRelFromPixelsIfMissing();
-        syncAllPixelsFromRel();
+        syncRelFromPixelsIfMissing();   // repopulates relById from current pixel x/y/w/h
+        syncAllPixelsFromRel();         // keeps pixel fields consistent with rel + current room bounds
 
         repaint();
         fireSelectionChanged();
@@ -385,7 +388,7 @@ public class RoomCanvas extends JPanel {
         if (onEditCommit != null) onEditCommit.run();
     }
 
-    // ✅ Used by the new "Placed Items" side list
+    // Used by the new "Placed Items" side list
     public void deleteItem(FurnitureItem it) {
         if (it == null) return;
         relById.remove(safeId(it));
@@ -492,18 +495,18 @@ public class RoomCanvas extends JPanel {
     }
 
     private void paintGrid(Graphics2D g2, int w, int h) {
-        g2.setColor(new Color(0xEEF2F7));
+        g2.setColor(UiKit.isDarkBlueMode() ? new Color(0x1F2937) : new Color(0xEEF2F7));
         int step = 24;
         for (int x = 0; x < w; x += step) g2.drawLine(x, 0, x, h);
         for (int y = 0; y < h; y += step) g2.drawLine(0, y, w, y);
     }
 
     private void paintRulers(Graphics2D g2, int w, int h) {
-        g2.setColor(new Color(0xE5E7EB));
+        g2.setColor(UiKit.isDarkBlueMode() ? new Color(0x0F172A) : new Color(0xE5E7EB));
         g2.fillRect(0, 0, w, 28);
         g2.fillRect(0, 0, 28, h);
 
-        g2.setColor(new Color(0x9CA3AF));
+        g2.setColor(UiKit.isDarkBlueMode() ? new Color(0x94A3B8) : new Color(0x9CA3AF));
         g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 10.5f));
 
         int step = 60;
@@ -516,7 +519,7 @@ public class RoomCanvas extends JPanel {
             g2.drawString(String.valueOf(y - 28), 4, y + 4);
         }
 
-        g2.setColor(new Color(0xD1D5DB));
+        g2.setColor(UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xD1D5DB));
         g2.drawLine(0, 28, w, 28);
         g2.drawLine(28, 0, 28, h);
     }
@@ -535,13 +538,14 @@ public class RoomCanvas extends JPanel {
         if (rot != 0) {
             double cx = r.getX() + r.getWidth() / 2.0;
             double cy = r.getY() + r.getHeight() / 2.0;
-            g2.rotate(Math.toRadians(rot), cx, cy);
+            //  FIX: Flip rotation direction in 2D so it matches 3D convention
+            g2.rotate(Math.toRadians(-rot), cx, cy);
         }
 
         Color base = parseHexOrDefault(safeColorHex(it), new Color(0x3B82F6));
         String kind = safeKind(it);
 
-        // ✅ Draw top-down “actual” 2D shapes (instead of generic boxes + emoji)
+        // Draw top-down “actual” 2D shapes (instead of generic boxes + emoji)
         if ("TABLE_ROUND".equals(kind)) {
             drawRoundTableTopDown(g2, r, base);
         } else if ("TABLE_RECT".equals(kind)) {
@@ -567,7 +571,7 @@ public class RoomCanvas extends JPanel {
         }
 
         if (isSel) {
-            g2.setColor(new Color(0x2563EB));
+            g2.setColor(UiKit.PRIMARY);
             g2.setStroke(new BasicStroke(2.0f));
             int pad = 4;
             if ("TABLE_ROUND".equals(kind)) {
@@ -705,7 +709,7 @@ public class RoomCanvas extends JPanel {
             }
         }
 
-        // ✅ IMPORTANT: legacy bounds are only meant for the initial load conversion
+        // IMPORTANT: legacy bounds are only meant for the initial load conversion
         // Once rel coords exist, we can clear it so future conversions use current room bounds.
         legacyLayoutBoundsPx = null;
     }
@@ -854,18 +858,36 @@ public class RoomCanvas extends JPanel {
 
     private Color schemeRoomFill(RoomSpec spec) {
         String scheme = (spec == null) ? null : spec.getColorScheme();
-        if (scheme == null) return new Color(0xF3F4F6);
+        if (UiKit.isDarkBlueMode()) {
+            if (scheme == null) return new Color(0x1E293B);
+            scheme = scheme.trim().toLowerCase(Locale.ENGLISH);
+            if (scheme.contains("warm")) return new Color(0x3A2E27);
+            if (scheme.contains("cool")) return new Color(0x1E3A5F);
+            if (scheme.contains("mono")) return new Color(0x2F3645);
+            if (scheme.contains("pastel")) return new Color(0x3D2E45);
+            return new Color(0x1E293B);
+        }
+        if (scheme == null) return UiKit.META_PILL_BG;
 
         scheme = scheme.trim().toLowerCase(Locale.ENGLISH);
         if (scheme.contains("warm")) return new Color(0xFFF7ED);
         if (scheme.contains("cool")) return new Color(0xEFF6FF);
         if (scheme.contains("mono")) return new Color(0xF5F5F5);
         if (scheme.contains("pastel")) return new Color(0xFDF2F8);
-        return new Color(0xF3F4F6);
+        return UiKit.META_PILL_BG;
     }
 
     private Color schemeRoomBorder(RoomSpec spec) {
         String scheme = (spec == null) ? null : spec.getColorScheme();
+        if (UiKit.isDarkBlueMode()) {
+            if (scheme == null) return new Color(0x475569);
+            scheme = scheme.trim().toLowerCase(Locale.ENGLISH);
+            if (scheme.contains("warm")) return new Color(0xB45309);
+            if (scheme.contains("cool")) return new Color(0x3B82F6);
+            if (scheme.contains("mono")) return new Color(0x64748B);
+            if (scheme.contains("pastel")) return new Color(0xA855F7);
+            return new Color(0x475569);
+        }
         if (scheme == null) return new Color(0xD1D5DB);
 
         scheme = scheme.trim().toLowerCase(Locale.ENGLISH);
@@ -897,23 +919,10 @@ public class RoomCanvas extends JPanel {
     private int safeShadingPercent(FurnitureItem it) {
         try {
             Integer v = it.getShadingPercent();
-            if (v == null) return 0;
             return Math.max(0, Math.min(100, v));
         } catch (Throwable ignored) {
             return 0;
         }
-    }
-
-    private String pickIcon(String kind, boolean round, boolean chair) {
-        try {
-            FurnitureKind k = FurnitureKind.valueOf(kind);
-            if (k != null && k.iconText != null && !k.iconText.isBlank()) return k.iconText;
-        } catch (Throwable ignored) { }
-
-        if (round) return "●";
-        if ("TABLE_RECT".equals(kind)) return "▭";
-        if (chair) return "🪑";
-        return "⬚";
     }
 
     /* ====================== Cache builder ====================== */

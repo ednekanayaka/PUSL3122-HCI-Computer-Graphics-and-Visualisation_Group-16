@@ -1,4 +1,3 @@
-// (FULL FILE) — paste this entire file exactly as-is:
 package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
@@ -9,10 +8,13 @@ import com.roomviz.model.Design;
 import com.roomviz.model.DesignStatus;
 import com.roomviz.model.RoomSpec;
 import com.roomviz.ui.Mini2DPreviewPanel;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.text.SimpleDateFormat;
@@ -21,19 +23,13 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Dashboard page styled to match the Figma layout (cards, CTA, filters, list rows)
- * - Wired to repository data (stats + recent list)
- * - ✅ Search updates in real-time
- * - ✅ Filters: Last 7 Days, Room Size, Room Shape
- * - ✅ Removed: Date Range, Tags, + Add Filter
- * - ✅ Load More paginates
+ * Dashboard page
+ * - repository data (stats + recent list)
+ * - Search updates in real-time
+ * - Filters: Last 7 Days, Room Size, Room Shape
+ * - Load More paginates
  */
 public class DashboardPage extends JPanel {
-
-    // Use UiKit colors where possible
-    private static final Color SUCCESS_PILL_BG = new Color(0xDCFCE7);
-    private static final Color WARN_PILL_BG = new Color(0xFFEDD5);
-    private static final Color PURPLE_PILL_BG = new Color(0xEDE9FE);
 
     private static final String SEARCH_PLACEHOLDER = "Search designs by name, room type, or client...";
 
@@ -85,7 +81,6 @@ public class DashboardPage extends JPanel {
         JPanel column = new JPanel();
         column.setOpaque(false);
         column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
-        // Cap width but allow shrinking for responsiveness
         column.setMaximumSize(new Dimension(860, 99999));
 
         // Header
@@ -119,7 +114,7 @@ public class DashboardPage extends JPanel {
 
         JPanel loadMoreBox = new JPanel(new FlowLayout(FlowLayout.CENTER));
         loadMoreBox.setOpaque(false);
-        loadMoreLabel = new JLabel("Load More Designs \u2193");
+        loadMoreLabel = new JLabel("Load More Designs " + FontAwesome.ARROW_DOWN);
         loadMoreLabel.setForeground(UiKit.PRIMARY);
         loadMoreLabel.setFont(UiKit.scaled(loadMoreLabel, Font.BOLD, 1.0f));
         loadMoreLabel.setBorder(new EmptyBorder(6, 6, 6, 6));
@@ -136,7 +131,7 @@ public class DashboardPage extends JPanel {
         column.add(loadMoreBox);
         column.add(vSpace(40));
 
-        // Create a wrapper to limit max width while staying centered
+        // wrapper to limit max width while staying centered
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
         wrapper.setMaximumSize(new Dimension(860, 99999));
@@ -154,11 +149,13 @@ public class DashboardPage extends JPanel {
         add(scroller, BorderLayout.CENTER);
 
         // refresh when this screen is shown again
-        router.addListener(key -> {
-            if (ScreenKeys.DASHBOARD.equals(key)) {
-                refreshDynamicSections();
-            }
-        });
+        if (router != null) {
+            router.addListener(key -> {
+                if (ScreenKeys.DASHBOARD.equals(key)) {
+                    refreshDynamicSections();
+                }
+            });
+        }
 
         // first paint
         refreshDynamicSections();
@@ -182,9 +179,20 @@ public class DashboardPage extends JPanel {
 
         statsRowRef.removeAll();
 
-        List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
+        if (appState == null || appState.getRepo() == null) {
+            statsRowRef.add(statCard("0", "Saved Designs", "All time",
+                    UiKit.PILL_SUCCESS_FG, UiKit.PILL_SUCCESS_BG, UiKit.PILL_SUCCESS_BG));
+            statsRowRef.add(statCard("0", "In Progress", "With items",
+                    UiKit.PILL_WARN_FG, UiKit.PILL_WARN_BG, UiKit.PILL_WARN_BG));
+            statsRowRef.add(statCard("0", "Recently Edited", "Today",
+                    UiKit.PILL_PURPLE_FG, UiKit.PILL_PURPLE_BG, UiKit.PILL_PURPLE_BG));
+            statsRowRef.revalidate();
+            statsRowRef.repaint();
+            return;
+        }
 
-        int savedCount = all == null ? 0 : all.size();
+        List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
+        int savedCount = (all == null) ? 0 : all.size();
 
         int inProgressCount = 0;
         if (all != null) {
@@ -206,13 +214,16 @@ public class DashboardPage extends JPanel {
         }
 
         statsRowRef.add(statCard(String.valueOf(savedCount), "Saved Designs",
-                "All time", new Color(0x16A34A), SUCCESS_PILL_BG, new Color(0xDCFCE7)));
+                "All time", UiKit.PILL_SUCCESS_FG, UiKit.PILL_SUCCESS_BG, UiKit.PILL_SUCCESS_BG));
 
         statsRowRef.add(statCard(String.valueOf(inProgressCount), "In Progress",
-                "With items", new Color(0xF59E0B), WARN_PILL_BG, new Color(0xFFEDD5)));
+                "With items", UiKit.PILL_WARN_FG, UiKit.PILL_WARN_BG, UiKit.PILL_WARN_BG));
 
         statsRowRef.add(statCard(String.valueOf(editedToday), "Recently Edited",
-                "Today", new Color(0x7C3AED), PURPLE_PILL_BG, new Color(0xEDE9FE)));
+                "Today", UiKit.PILL_PURPLE_FG, UiKit.PILL_PURPLE_BG, UiKit.PILL_PURPLE_BG));
+
+        statsRowRef.revalidate();
+        statsRowRef.repaint();
     }
 
     private void refreshRecentList() {
@@ -220,12 +231,18 @@ public class DashboardPage extends JPanel {
 
         recentListRef.removeAll();
 
+        if (appState == null || appState.getRepo() == null) {
+            recentListRef.add(emptyRecentCard());
+            updateLoadMoreVisibility(0, 0);
+            recentListRef.revalidate();
+            recentListRef.repaint();
+            return;
+        }
+
         List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
         if (all == null || all.isEmpty()) {
             recentListRef.add(emptyRecentCard());
             updateLoadMoreVisibility(0, 0);
-
-            // repaint even on early return
             recentListRef.revalidate();
             recentListRef.repaint();
             return;
@@ -237,8 +254,6 @@ public class DashboardPage extends JPanel {
         if (filtered.isEmpty()) {
             recentListRef.add(emptyFilteredCard());
             updateLoadMoreVisibility(0, 0);
-
-            // repaint even on early return
             recentListRef.revalidate();
             recentListRef.repaint();
             return;
@@ -265,7 +280,7 @@ public class DashboardPage extends JPanel {
         boolean canLoadMore = total > shown;
         loadMoreLabel.setVisible(canLoadMore);
         if (canLoadMore) {
-            loadMoreLabel.setText("Load More Designs \u2193");
+            loadMoreLabel.setText("Load More Designs " + FontAwesome.ARROW_DOWN);
             loadMoreLabel.setForeground(UiKit.PRIMARY);
         }
     }
@@ -444,7 +459,12 @@ public class DashboardPage extends JPanel {
     }
 
     private void clearDashboardFilters() {
-        if (searchField != null) searchField.setText("");
+        // reset search safely (don’t leave placeholder treated as “search text”)
+        if (searchField != null) {
+            searchField.setText("");
+            // If your UiKit placeholder logic depends on focus, do a tiny nudge:
+            searchField.postActionEvent();
+        }
 
         filterLast7Days = false;
         filterRoomSize = null;
@@ -471,12 +491,12 @@ public class DashboardPage extends JPanel {
         if (!(chip instanceof JLabel)) return;
         JLabel l = (JLabel) chip;
         if (active) {
-            l.setBackground(new Color(0xEEF2FF));
-            l.setForeground(UiKit.PRIMARY_DARK); // Assuming PRIMARY_DARK exists in UiKit
+            l.setBackground(UiKit.CHIP_ACTIVE_BG);
+            l.setForeground(UiKit.CHIP_ACTIVE_TEXT);
             l.setFont(UiKit.scaled(l, Font.BOLD, 0.95f));
         } else {
-            l.setBackground(new Color(0xF3F4F6));
-            l.setForeground(new Color(0x374151));
+            l.setBackground(UiKit.META_PILL_BG);
+            l.setForeground(UiKit.META_PILL_FG);
             l.setFont(UiKit.scaled(l, Font.PLAIN, 0.95f));
         }
         l.repaint();
@@ -519,9 +539,9 @@ public class DashboardPage extends JPanel {
         icon.setPreferredSize(new Dimension(34, 34));
         icon.setOpaque(false);
         icon.setLayout(new GridBagLayout());
-        JLabel dot = new JLabel("\u25A0");
+        JLabel dot = new JLabel(FontAwesome.SQUARE);
         dot.setForeground(pillFg);
-        dot.setFont(dot.getFont().deriveFont(Font.BOLD, 11f));
+        dot.setFont(FontAwesome.solid(11f));
         icon.add(dot);
 
         JLabel pill = pill(pillText, pillFg, pillBg);
@@ -569,11 +589,16 @@ public class DashboardPage extends JPanel {
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JButton btn = UiKit.primaryButton("+  Create New Design");
+        if (btn instanceof UiKit.RoundButton rb) {
+            rb.setGradient(null, null);
+        }
         btn.setBackground(Color.WHITE);
         btn.setForeground(UiKit.PRIMARY);
         btn.setFont(UiKit.scaled(btn, Font.BOLD, 1.0f));
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btn.addActionListener(e -> router.show(ScreenKeys.NEW_DESIGN));
+        btn.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.NEW_DESIGN);
+        });
 
         g.add(title);
         g.add(sub);
@@ -589,19 +614,50 @@ public class DashboardPage extends JPanel {
         card.setLayout(new BorderLayout(14, 14));
         card.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        // Top Row: Search (Left) + All Filters (Right)
-        JPanel top = new JPanel(new BorderLayout(14, 0));
+        // Top Row: Search
+        JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
 
-        searchField = UiKit.searchField(SEARCH_PLACEHOLDER);
-        searchField.setPreferredSize(new Dimension(200, 38)); // Adjusted search bar height
-        
-        JButton allFilters = UiKit.ghostButton("All Filters");
-        allFilters.setFont(UiKit.scaled(allFilters, Font.BOLD, 0.95f));
-        allFilters.addActionListener(e -> clearDashboardFilters());
+        UiKit.SearchResult sr = UiKit.searchFieldWithIcon(SEARCH_PLACEHOLDER);
+        searchField = sr.field;
+        sr.panel.setPreferredSize(new Dimension(200, 38));
+        top.add(sr.panel, BorderLayout.CENTER);
 
-        top.add(searchField, BorderLayout.CENTER);
-        top.add(allFilters, BorderLayout.EAST);
+        // Real-time search wiring (DocumentListener)
+        if (searchField != null) {
+            searchField.getDocument().addDocumentListener(new DocumentListener() {
+                @Override public void insertUpdate(DocumentEvent e) { onSearchChanged(); }
+                @Override public void removeUpdate(DocumentEvent e) { onSearchChanged(); }
+                @Override public void changedUpdate(DocumentEvent e) { onSearchChanged(); }
+                private void onSearchChanged() {
+                    recentLimit = 5;
+                    refreshRecentList();
+                }
+            });
+
+            // Keep placeholder from acting as a "real query"
+            searchField.addFocusListener(new FocusAdapter() {
+                @Override public void focusGained(FocusEvent e) {
+                    if (SEARCH_PLACEHOLDER.equals(searchField.getText())) {
+                        searchField.setText("");
+                    }
+                }
+                @Override public void focusLost(FocusEvent e) {
+                    // If user leaves it blank, let UiKit/placeholder behaviour show (safe if UiKit does it)
+                    // If UiKit doesn't auto-restore placeholder, this is harmless.
+                    if (searchField.getText() != null && searchField.getText().trim().isEmpty()) {
+                        // Do NOT force placeholder text here; your UiKit likely handles it.
+                        // Leaving blank keeps filtering logic clean.
+                    }
+                }
+            });
+
+            // pressing Enter just refreshes
+            searchField.addActionListener(e -> {
+                recentLimit = 5;
+                refreshRecentList();
+            });
+        }
 
         // Bottom Row: Chips
         JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
@@ -683,8 +739,8 @@ public class DashboardPage extends JPanel {
         sort.setFont(UiKit.scaled(sort, Font.PLAIN, 0.95f));
 
         right.add(sort);
-        right.add(iconSquare("\u2630"));
-        right.add(iconSquare("\u25A6"));
+        right.add(iconSquare(FontAwesome.BARS));
+        right.add(iconSquare(FontAwesome.TH_LARGE));
 
         row.add(title, BorderLayout.WEST);
         row.add(right, BorderLayout.EAST);
@@ -696,14 +752,14 @@ public class DashboardPage extends JPanel {
         String client = safe(d.getCustomerName(), "Client");
         RoomSpec rs = d.getRoomSpec();
 
-        String size = (rs == null) ? "-" : rs.toSizeLabel();
+        String size = (rs == null) ? "-" : safe(rs.toSizeLabel(), "-");
         String scheme = (rs == null) ? "-" : safe(rs.getColorScheme(), "-");
         String shape = (rs == null) ? "-" : safe(rs.getShape(), "-");
 
         String edited = "Last edited: " + timeAgoLabel(d.getLastUpdatedEpochMs());
         boolean hasItems = d.getItems() != null && !d.getItems().isEmpty();
         String status = hasItems ? "In Progress" : "Draft";
-        Color statusColor = hasItems ? new Color(0xF59E0B) : new Color(0x2563EB);
+        Color statusColor = hasItems ? UiKit.PILL_WARN_FG : UiKit.STATUS_DRAFT_FG;
 
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
         card.setOpaque(false);
@@ -773,15 +829,17 @@ public class DashboardPage extends JPanel {
         open.setFont(UiKit.scaled(open, Font.BOLD, 0.95f));
         open.setMargin(new Insets(6, 14, 6, 14));
         open.addActionListener(e -> {
-            appState.setCurrentDesignId(d.getId());
-            router.show(ScreenKeys.PLANNER_2D);
+            if (appState != null) appState.setCurrentDesignId(d.getId());
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
         });
-        
+
         JButton dup = UiKit.ghostButton("Duplicate");
         dup.setFont(UiKit.scaled(dup, Font.BOLD, 0.95f));
         dup.addActionListener(e -> {
-            appState.getRepo().duplicate(d.getId());
-            refreshDynamicSections();
+            if (appState != null && appState.getRepo() != null) {
+                appState.getRepo().duplicate(d.getId());
+                refreshDynamicSections();
+            }
         });
 
         JButton del = UiKit.ghostButton("Delete");
@@ -795,11 +853,13 @@ public class DashboardPage extends JPanel {
                     JOptionPane.YES_NO_OPTION
             );
             if (ok == JOptionPane.YES_OPTION) {
-                appState.getRepo().delete(d.getId());
-                if (d.getId() != null && d.getId().equals(appState.getCurrentDesignId())) {
-                    appState.setCurrentDesignId(null);
+                if (appState != null && appState.getRepo() != null) {
+                    appState.getRepo().delete(d.getId());
+                    if (d.getId() != null && d.getId().equals(appState.getCurrentDesignId())) {
+                        appState.setCurrentDesignId(null);
+                    }
+                    refreshDynamicSections();
                 }
-                refreshDynamicSections();
             }
         });
 
@@ -813,13 +873,20 @@ public class DashboardPage extends JPanel {
         card.add(left, BorderLayout.CENTER);
         card.add(right, BorderLayout.EAST);
 
+        // Hover + double click open (guard setFill if your RoundedPanel supports it)
         card.addMouseListener(new MouseAdapter() {
-            @Override public void mouseEntered(MouseEvent e) { card.setFill(new Color(0xFAFAFB)); card.repaint(); }
-            @Override public void mouseExited(MouseEvent e) { card.setFill(UiKit.WHITE); card.repaint(); }
+            @Override public void mouseEntered(MouseEvent e) {
+                try { card.setFill(UiKit.CARD_HOVER); } catch (Throwable ignored) {}
+                card.repaint();
+            }
+            @Override public void mouseExited(MouseEvent e) {
+                try { card.setFill(UiKit.WHITE); } catch (Throwable ignored) {}
+                card.repaint();
+            }
             @Override public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
-                    appState.setCurrentDesignId(d.getId());
-                    router.show(ScreenKeys.PLANNER_2D);
+                    if (appState != null) appState.setCurrentDesignId(d.getId());
+                    if (router != null) router.show(ScreenKeys.PLANNER_2D);
                 }
             }
         });
@@ -835,12 +902,10 @@ public class DashboardPage extends JPanel {
         p.setLayout(new GridBagLayout());
         JLabel l = new JLabel(text);
         l.setForeground(UiKit.MUTED);
-        l.setFont(UiKit.scaled(l, Font.PLAIN, 0.90f));
+        l.setFont(FontAwesome.solid(12f));
         p.add(l);
         return p;
     }
-
-    /* ===================== Custom panels ===================== */
 
     /* ===================== Helpers ===================== */
 
@@ -899,8 +964,8 @@ public class DashboardPage extends JPanel {
     private static JLabel metaPill(String text) {
         JLabel l = new JLabel(text);
         l.setOpaque(true);
-        l.setBackground(new Color(0xF3F4F6));
-        l.setForeground(new Color(0x374151));
+        l.setBackground(UiKit.META_PILL_BG);
+        l.setForeground(UiKit.META_PILL_FG);
         l.setFont(l.getFont().deriveFont(Font.PLAIN, 11.2f));
         l.setBorder(new EmptyBorder(3, 8, 3, 8));
         return l;

@@ -8,6 +8,7 @@ import com.roomviz.model.Design;
 import com.roomviz.model.RoomSpec;
 import com.roomviz.ui.Mini2DPreviewPanel;
 import com.roomviz.ui.Mini3DPreviewPanel;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.imageio.ImageIO;
@@ -16,47 +17,31 @@ import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
 /**
- * Design Details Page (Step 1 wired)
+ * Design Details Page
  * - Opens when user clicks a design in the Design Library.
  * - Shows real data from repository via AppState.
  *
- * ✅ Preview behaviour (UPDATED):
  * - 2D View = REAL mini preview (Mini2DPreviewPanel)
  * - 3D View = REAL mini preview (Mini3DPreviewPanel)
  * - Toggle switches the preview card (CardLayout)
- *
- * ✅ Completed:
  * - 2D/3D toggle is wired (CardLayout preview switch)
- * - Fullscreen works (opens preview dialog)
- * - Download works (exports active preview PNG)
+ * - Fullscreen (opens preview dialog)
+ * - Download (exports active preview PNG)
  */
 public class DesignDetailsPage extends JPanel {
 
     private final Router router;
     private final AppState appState;
 
-    // ===== Palette (aligned with UiKit) =====
-    private static final Color TEXT = UiKit.TEXT;
-    private static final Color MUTED = UiKit.MUTED;
-    private static final Color BORDER = UiKit.BORDER;
-    private static final Color WHITE = UiKit.WHITE;
-
-    private static final Color PRIMARY = UiKit.PRIMARY;
-    private static final Color PRIMARY_DARK = new Color(0x6D28D9);
-
-    private static final Color DANGER = UiKit.DANGER;
-    private static final Color WARNING_BG = new Color(0xFFFBEB);
-    private static final Color WARNING_BORDER = new Color(0xFDE68A);
-    private static final Color WARNING_TEXT = new Color(0x92400E);
+    // Colors are read directly from UiKit.* so they adapt to dark/light mode
 
     // ===== Dynamic refs =====
     private JLabel headerTitle;
@@ -180,16 +165,20 @@ public class DesignDetailsPage extends JPanel {
     }
 
     private void bindDesignToUI(Design d) {
-        String title = safe(d.getDesignName(), "Untitled Design");
+        // robust getters (supports both old + new Design field names)
+        String title = safe(getString(d, "getDesignName", "getName"), "Untitled Design");
         if (headerTitle != null) headerTitle.setText(title);
-        if (headerSubtitle != null) headerSubtitle.setText("Last edited " + timeAgoLabel(d.getLastUpdatedEpochMs()));
 
-        String cust = safe(d.getCustomerName(), "Unknown Customer");
+        long updated = getLong(d, "getLastUpdatedEpochMs", "getUpdatedAtEpochMs", "getUpdatedAtMs", "getLastUpdatedMs");
+        if (headerSubtitle != null) headerSubtitle.setText("Last edited " + timeAgoLabel(updated));
+
+        String cust = safe(getString(d, "getCustomerName", "getClientName", "getOwnerName"), "Unknown Customer");
         if (customerName != null) customerName.setText(cust);
         if (customerEmail != null) customerEmail.setText(generateEmailHint(cust));
         if (avatarCircle != null) avatarCircle.setLetter(firstLetter(cust));
 
-        RoomSpec spec = d.getRoomSpec();
+        RoomSpec spec = null;
+        try { spec = d.getRoomSpec(); } catch (Throwable ignored) {}
 
         String unit = (spec == null) ? "" : safe(spec.getUnit(), "");
         String shape = (spec == null) ? "-" : safe(spec.getShape(), "-");
@@ -215,27 +204,24 @@ public class DesignDetailsPage extends JPanel {
 
         if (themeText != null) themeText.setText(scheme);
 
-        if (createdVal != null) createdVal.setText(dateLabel(d.getCreatedAtEpochMs()));
-        if (modifiedVal != null) modifiedVal.setText(dateLabel(d.getLastUpdatedEpochMs()));
+        long created = getLong(d, "getCreatedAtEpochMs", "getCreatedEpochMs", "getCreatedAtMs");
+        if (createdVal != null) createdVal.setText(dateLabel(created));
+        if (modifiedVal != null) modifiedVal.setText(dateLabel(updated));
 
-        String notes = safe(d.getNotes(), "");
+        String notes = safe(getString(d, "getNotes", "getDescription"), "");
         if (notesArea != null) {
             if (notes.isEmpty()) {
                 notesArea.setText("No notes added yet.");
-                notesArea.setForeground(MUTED);
+                notesArea.setForeground(UiKit.MUTED);
             } else {
                 notesArea.setText(notes);
-                notesArea.setForeground(TEXT);
+                notesArea.setForeground(UiKit.TEXT);
             }
         }
 
-        // ✅ Bind real previews
-        if (mini2DPanel != null) {
-            mini2DPanel.setDesign(d);
-        }
-        if (mini3DPanel != null) {
-            mini3DPanel.setDesign(d);
-        }
+        // Bind real previews
+        if (mini2DPanel != null) mini2DPanel.setDesign(d);
+        if (mini3DPanel != null) mini3DPanel.setDesign(d);
     }
 
     /* ===================== Header ===================== */
@@ -247,7 +233,7 @@ public class DesignDetailsPage extends JPanel {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        JButton back = UiKit.iconButton("←");
+        JButton back = UiKit.iconButton(FontAwesome.ARROW_LEFT);
         back.setToolTipText("Back to Design Library");
         back.addActionListener(e -> {
             if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
@@ -258,11 +244,11 @@ public class DesignDetailsPage extends JPanel {
         titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
 
         headerTitle = new JLabel("Design Details");
-        headerTitle.setForeground(TEXT);
+        headerTitle.setForeground(UiKit.TEXT);
         headerTitle.setFont(UiKit.scaled(headerTitle, Font.BOLD, 1.30f));
 
         headerSubtitle = new JLabel("—");
-        headerSubtitle.setForeground(MUTED);
+        headerSubtitle.setForeground(UiKit.MUTED);
         headerSubtitle.setFont(UiKit.scaled(headerSubtitle, Font.PLAIN, 0.90f));
 
         titleBox.add(headerTitle);
@@ -285,7 +271,10 @@ public class DesignDetailsPage extends JPanel {
             Design copy = appState.getRepo().duplicate(appState.getCurrentDesignId());
             if (copy != null) {
                 appState.setCurrentDesignId(copy.getId());
-                JOptionPane.showMessageDialog(this, "Duplicated ✅");
+                JOptionPane.showMessageDialog(this,
+                        "Duplicated: " + safe(getString(copy, "getDesignName", "getName"), "Untitled Design"),
+                        "Duplicated",
+                        JOptionPane.INFORMATION_MESSAGE);
                 refresh(frame);
             }
         });
@@ -306,7 +295,7 @@ public class DesignDetailsPage extends JPanel {
         delete.addActionListener(e -> {
             if (appState == null || appState.getCurrentDesignId() == null) return;
             Design d = appState.getRepo().getById(appState.getCurrentDesignId());
-            String current = d == null ? "this design" : safe(d.getDesignName(), "this design");
+            String current = d == null ? "this design" : safe(getString(d, "getDesignName", "getName"), "this design");
 
             int ok = JOptionPane.showConfirmDialog(
                     this,
@@ -333,41 +322,96 @@ public class DesignDetailsPage extends JPanel {
     /* ===================== Main grid ===================== */
 
     private JComponent buildMainGrid() {
-        JPanel grid = new JPanel(new GridBagLayout());
-        grid.setOpaque(false);
+        JPanel col = new JPanel();
+        col.setOpaque(false);
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
 
-        GridBagConstraints gc = new GridBagConstraints();
-        gc.gridy = 0;
-        gc.fill = GridBagConstraints.BOTH;
-        gc.weighty = 1;
+        // 1) Compact metadata strip (replaces right sidebar)
+        col.add(buildInfoStrip());
+        col.add(Box.createVerticalStrut(14));
 
-        JPanel leftCol = new JPanel();
-        leftCol.setOpaque(false);
-        leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
+        // 2) Preview card
+        JComponent preview = buildPreviewCard();
+        preview.setAlignmentX(0.0f);
+        col.add(preview);
+        col.add(Box.createVerticalStrut(14));
 
-        leftCol.add(buildPreviewCard());
-        leftCol.add(Box.createVerticalStrut(14));
-        leftCol.add(buildNotesCard());
+        // 3) Notes card
+        JComponent notes = buildNotesCard();
+        notes.setAlignmentX(0.0f);
+        col.add(notes);
 
-        JPanel rightCol = new JPanel();
-        rightCol.setOpaque(false);
-        rightCol.setLayout(new BoxLayout(rightCol, BoxLayout.Y_AXIS));
+        return col;
+    }
 
-        rightCol.add(buildInfoCard());
-        rightCol.add(Box.createVerticalStrut(14));
-        rightCol.add(buildTagsCard());
+    /** Compact horizontal metadata strip. */
+    private JComponent buildInfoStrip() {
+        RoundedPanel card = cardPanel();
+        card.setLayout(new BorderLayout());
+        card.setBorder(new EmptyBorder(16, 18, 16, 18));
+        card.setAlignmentX(0.0f);
 
-        gc.gridx = 0;
-        gc.weightx = 1.0;
-        gc.insets = new Insets(0, 0, 0, 0);
-        grid.add(leftCol, gc);
+        avatarCircle = new AvatarCircle("D");
+        customerName = new JLabel("\u2014");
+        customerName.setForeground(UiKit.TEXT);
+        customerName.setFont(UiKit.scaled(customerName, Font.BOLD, 0.98f));
 
-        gc.gridx = 1;
-        gc.weightx = 0.38;
-        gc.insets = new Insets(0, 14, 0, 0);
-        grid.add(rightCol, gc);
+        customerEmail = new JLabel("\u2014");
+        customerEmail.setForeground(UiKit.MUTED);
+        customerEmail.setFont(UiKit.scaled(customerEmail, Font.PLAIN, 0.86f));
 
-        return grid;
+        JPanel custCol = new JPanel();
+        custCol.setOpaque(false);
+        custCol.setLayout(new BoxLayout(custCol, BoxLayout.Y_AXIS));
+        custCol.add(customerName);
+        custCol.add(customerEmail);
+
+        JPanel custRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        custRow.setOpaque(false);
+        custRow.add(avatarCircle);
+        custRow.add(custCol);
+
+        roomTypeVal = new JLabel("\u2014");
+        roomSizeVal = new JLabel("\u2014");
+        roomShapeVal = new JLabel("\u2014");
+        createdVal = new JLabel("\u2014");
+        modifiedVal = new JLabel("\u2014");
+        themeText = new JLabel(); // hidden compat
+
+        JPanel topRow = new JPanel(new BorderLayout(16, 0));
+        topRow.setOpaque(false);
+        topRow.add(custRow, BorderLayout.WEST);
+
+        JPanel meta = new JPanel(new GridLayout(2, 3, 20, 8));
+        meta.setOpaque(false);
+        meta.add(metaKV("Room Type", roomTypeVal));
+        meta.add(metaKV("Room Size", roomSizeVal));
+        meta.add(metaKV("Room Shape", roomShapeVal));
+        meta.add(metaKV("Created", createdVal));
+        meta.add(metaKV("Last Modified", modifiedVal));
+        meta.add(Box.createGlue());
+
+        topRow.add(meta, BorderLayout.CENTER);
+        card.add(topRow, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JComponent metaKV(String key, JLabel val) {
+        JPanel p = new JPanel();
+        p.setOpaque(false);
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+
+        JLabel k = new JLabel(key.toUpperCase());
+        k.setForeground(UiKit.MUTED);
+        k.setFont(UiKit.scaled(k, Font.BOLD, 0.72f));
+
+        val.setForeground(UiKit.TEXT);
+        val.setFont(UiKit.scaled(val, Font.PLAIN, 0.92f));
+
+        p.add(k);
+        p.add(Box.createVerticalStrut(2));
+        p.add(val);
+        return p;
     }
 
     /* ===================== Preview Card ===================== */
@@ -424,12 +468,12 @@ public class DesignDetailsPage extends JPanel {
         JPanel bottom = new JPanel(new GridLayout(1, 2, 10, 0));
         bottom.setOpaque(false);
 
-        JButton edit2d = primaryPill("Edit in 2D");
+        JButton edit2d = UiKit.primaryButton("Edit in 2D");
         edit2d.addActionListener(e -> {
             if (router != null) router.show(ScreenKeys.PLANNER_2D);
         });
 
-        JButton view3d = primaryGradientPill("View in 3D");
+        JButton view3d = UiKit.ghostButton("View in 3D");
         view3d.addActionListener(e -> {
             if (router != null) router.show(ScreenKeys.VIEW_3D);
         });
@@ -452,15 +496,14 @@ public class DesignDetailsPage extends JPanel {
 
     /**
      * Overlay icons (fullscreen + download) stacked above a content panel.
-     * IMPORTANT: Pass the inner content panel, not something you also add elsewhere.
      */
     private JComponent buildPreviewStack(JComponent innerContent) {
         JPanel previewIcons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         previewIcons.setOpaque(false);
 
-        JButton full = iconPill("⛶");
+        JButton full = iconPill(FontAwesome.EXPAND);
         full.setToolTipText("Fullscreen");
-        JButton dl = iconPill("⬇");
+        JButton dl = iconPill(FontAwesome.DOWNLOAD);
         dl.setToolTipText("Download PNG");
 
         full.addActionListener(e -> openPreviewFullscreen());
@@ -483,16 +526,16 @@ public class DesignDetailsPage extends JPanel {
         return stack;
     }
 
-    // ✅ REAL 2D preview (Mini2DPreviewPanel)
+    // REAL 2D preview (Mini2DPreviewPanel)
     private JComponent build2DPreview() {
-        RoundedPanel inner = new RoundedPanel(16, new Color(0xF9FAFB));
-        inner.setBorderPaint(BORDER);
+        RoundedPanel inner = new RoundedPanel(16, UiKit.CARD_HOVER);
+        inner.setBorderPaint(UiKit.BORDER);
         inner.setLayout(new BorderLayout());
         inner.setBorder(new EmptyBorder(10, 10, 10, 10));
 
         mini2DPanel = new Mini2DPreviewPanel();
         mini2DPanel.setOpaque(true);
-        mini2DPanel.setBackground(new Color(0xF9FAFB));
+        mini2DPanel.setBackground(UiKit.CARD_HOVER);
         mini2DPanel.setPreferredSize(new Dimension(860, 320));
 
         JPanel hint = new JPanel(new BorderLayout());
@@ -500,11 +543,11 @@ public class DesignDetailsPage extends JPanel {
         hint.setBorder(new EmptyBorder(0, 2, 8, 2));
 
         JLabel t = new JLabel("2D Preview");
-        t.setForeground(TEXT);
+        t.setForeground(UiKit.TEXT);
         t.setFont(UiKit.scaled(t, Font.BOLD, 0.95f));
 
         JLabel s = new JLabel("Read-only snapshot. Use “Edit in 2D” to modify.");
-        s.setForeground(MUTED);
+        s.setForeground(UiKit.MUTED);
         s.setFont(UiKit.scaled(s, Font.PLAIN, 0.90f));
 
         JPanel hintLeft = new JPanel();
@@ -522,10 +565,10 @@ public class DesignDetailsPage extends JPanel {
         return buildPreviewStack(inner);
     }
 
-    // ✅ REAL 3D preview (Mini3DPreviewPanel)
+    // REAL 3D preview (Mini3DPreviewPanel)
     private JComponent build3DPreview() {
         RoundedPanel inner = new RoundedPanel(16, new Color(0x0B1220));
-        inner.setBorderPaint(BORDER);
+        inner.setBorderPaint(UiKit.BORDER);
         inner.setLayout(new BorderLayout());
         inner.setBorder(new EmptyBorder(10, 10, 10, 10));
 
@@ -582,8 +625,8 @@ public class DesignDetailsPage extends JPanel {
         content.setBackground(UiKit.WHITE);
         content.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        JLabel title = new JLabel(safe(d.getDesignName(), "Design Preview") + "  •  " + previewMode + " View");
-        title.setForeground(TEXT);
+        JLabel title = new JLabel(safe(getString(d, "getDesignName", "getName"), "Design Preview") + "  •  " + previewMode + " View");
+        title.setForeground(UiKit.TEXT);
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.05f));
 
         JButton close = ghostButton("Close");
@@ -592,7 +635,7 @@ public class DesignDetailsPage extends JPanel {
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(true);
         top.setBackground(UiKit.WHITE);
-        top.setBorder(new CompoundBorder(new LineBorder(BORDER, 1), new EmptyBorder(10, 12, 10, 12)));
+        top.setBorder(new CompoundBorder(new LineBorder(UiKit.BORDER, 1), new EmptyBorder(10, 12, 10, 12)));
         top.add(title, BorderLayout.WEST);
         top.add(close, BorderLayout.EAST);
 
@@ -607,8 +650,8 @@ public class DesignDetailsPage extends JPanel {
             Mini2DPreviewPanel p = new Mini2DPreviewPanel();
             p.setDesign(d);
 
-            RoundedPanel wrap = new RoundedPanel(16, new Color(0xF9FAFB));
-            wrap.setBorderPaint(BORDER);
+            RoundedPanel wrap = new RoundedPanel(16, UiKit.CARD_HOVER);
+            wrap.setBorderPaint(UiKit.BORDER);
             wrap.setLayout(new BorderLayout());
             wrap.setBorder(new EmptyBorder(12, 12, 12, 12));
             wrap.add(p, BorderLayout.CENTER);
@@ -649,7 +692,7 @@ public class DesignDetailsPage extends JPanel {
 
         try {
             ImageIO.write(img, "png", f);
-            JOptionPane.showMessageDialog(this, "Saved ✅\n" + f.getAbsolutePath());
+            JOptionPane.showMessageDialog(this, "Saved:\n" + f.getAbsolutePath(), "Saved", JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Save failed: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -674,11 +717,13 @@ public class DesignDetailsPage extends JPanel {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         if ("3D".equals(previewMode)) g2.setColor(new Color(0x0B1220));
-        else g2.setColor(WHITE);
+        else g2.setColor(UiKit.WHITE);
 
         g2.fillRect(0, 0, w, h);
 
+        c.doLayout();
         c.paint(g2);
+
         g2.dispose();
         return img;
     }
@@ -702,157 +747,17 @@ public class DesignDetailsPage extends JPanel {
         notesArea.setLineWrap(true);
         notesArea.setEditable(false);
         notesArea.setOpaque(false);
-        notesArea.setForeground(MUTED);
+        notesArea.setForeground(UiKit.MUTED);
         notesArea.setFont(UiKit.scaled(notesArea, Font.PLAIN, 0.98f));
         notesArea.setBorder(null);
 
         body.add(notesArea);
-        body.add(Box.createVerticalStrut(10));
-
-        JPanel warn = new JPanel(new BorderLayout());
-        warn.setOpaque(true);
-        warn.setBackground(WARNING_BG);
-        warn.setBorder(new CompoundBorder(
-                new LineBorder(WARNING_BORDER, 1, true),
-                new EmptyBorder(10, 12, 10, 12)
-        ));
-
-        JLabel warnText = new JLabel("⚠  Tip: Add lighting notes to improve the final render mood.");
-        warnText.setForeground(WARNING_TEXT);
-        warnText.setFont(UiKit.scaled(warnText, Font.PLAIN, 0.90f));
-        warn.add(warnText, BorderLayout.CENTER);
-
-        body.add(warn);
 
         card.add(body, BorderLayout.CENTER);
         return card;
     }
 
-    private JComponent buildInfoCard() {
-        RoundedPanel card = cardPanel();
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
-
-        card.add(sectionTitle("Design Information"), BorderLayout.NORTH);
-
-        JPanel body = new JPanel();
-        body.setOpaque(false);
-        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(10, 0, 0, 0));
-
-        JPanel cust = new JPanel(new BorderLayout());
-        cust.setOpaque(false);
-        cust.add(keyLabel("Customer"), BorderLayout.NORTH);
-
-        JPanel custRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        custRow.setOpaque(false);
-
-        avatarCircle = new AvatarCircle("D");
-        customerName = new JLabel("—");
-        customerName.setForeground(TEXT);
-        customerName.setFont(UiKit.scaled(customerName, Font.BOLD, 0.98f));
-
-        customerEmail = new JLabel("—");
-        customerEmail.setForeground(MUTED);
-        customerEmail.setFont(UiKit.scaled(customerEmail, Font.PLAIN, 0.90f));
-
-        JPanel nm = new JPanel();
-        nm.setOpaque(false);
-        nm.setLayout(new BoxLayout(nm, BoxLayout.Y_AXIS));
-        nm.add(customerName);
-        nm.add(customerEmail);
-
-        custRow.add(avatarCircle);
-        custRow.add(nm);
-        cust.add(custRow, BorderLayout.CENTER);
-
-        body.add(cust);
-        body.add(divider());
-
-        roomTypeVal = new JLabel("—");
-        roomSizeVal = new JLabel("—");
-        roomShapeVal = new JLabel("—");
-
-        body.add(kv("Room Type", roomTypeVal));
-        body.add(divider());
-        body.add(kv("Room Size", roomSizeVal));
-        body.add(divider());
-        body.add(kv("Room Shape", roomShapeVal));
-        body.add(divider());
-
-        JPanel theme = new JPanel(new BorderLayout());
-        theme.setOpaque(false);
-        theme.add(keyLabel("Colour Theme"), BorderLayout.NORTH);
-
-        JPanel sw = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
-        sw.setOpaque(false);
-        sw.add(colorDot(new Color(0xE5E7EB)));
-        sw.add(colorDot(new Color(0x111827)));
-        sw.add(colorDot(new Color(0xFDE68A)));
-
-        themeText = new JLabel("—");
-        themeText.setForeground(MUTED);
-        themeText.setFont(UiKit.scaled(themeText, Font.PLAIN, 0.90f));
-        sw.add(themeText);
-
-        theme.add(sw, BorderLayout.CENTER);
-
-        body.add(theme);
-        body.add(divider());
-
-        createdVal = new JLabel("—");
-        modifiedVal = new JLabel("—");
-
-        body.add(kv("Created", createdVal));
-        body.add(divider());
-        body.add(kv("Last Modified", modifiedVal));
-
-        card.add(body, BorderLayout.CENTER);
-        return card;
-    }
-
-    private JComponent kv(String k, JLabel valueLabel) {
-        JPanel row = new JPanel(new BorderLayout());
-        row.setOpaque(false);
-
-        JLabel key = keyLabel(k);
-        valueLabel.setForeground(TEXT);
-        valueLabel.setFont(UiKit.scaled(valueLabel, Font.PLAIN, 0.96f));
-
-        row.add(key, BorderLayout.NORTH);
-        row.add(valueLabel, BorderLayout.CENTER);
-        row.setBorder(new EmptyBorder(2, 0, 2, 0));
-        return row;
-    }
-
-    private JComponent buildTagsCard() {
-        RoundedPanel card = cardPanel();
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
-
-        card.add(sectionTitle("Tags"), BorderLayout.NORTH);
-
-        JPanel body = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 10));
-        body.setOpaque(false);
-
-        body.add(UiKit.chipPrimary("Modern"));
-        body.add(UiKit.chip("Minimalist"));
-        body.add(UiKit.chip("Neutral"));
-
-        JLabel add = new JLabel("+ Add Tag");
-        add.setForeground(PRIMARY);
-        add.setFont(UiKit.scaled(add, Font.BOLD, 0.90f));
-        add.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        add.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                JOptionPane.showMessageDialog(DesignDetailsPage.this, "Tags can be persisted in a later step.");
-            }
-        });
-        body.add(add);
-
-        card.add(body, BorderLayout.CENTER);
-        return card;
-    }
+    // buildInfoCard and buildTagsCard removed — replaced by buildInfoStrip()
 
     /* ===================== Empty state ===================== */
 
@@ -862,11 +767,11 @@ public class DesignDetailsPage extends JPanel {
         card.setBorder(new EmptyBorder(22, 22, 22, 22));
 
         JLabel t = new JLabel(title);
-        t.setForeground(TEXT);
+        t.setForeground(UiKit.TEXT);
         t.setFont(UiKit.scaled(t, Font.BOLD, 1.05f));
 
         JLabel s = new JLabel(subtitle);
-        s.setForeground(MUTED);
+        s.setForeground(UiKit.MUTED);
         s.setFont(UiKit.scaled(s, Font.PLAIN, 0.98f));
         s.setBorder(new EmptyBorder(8, 0, 0, 0));
 
@@ -878,34 +783,17 @@ public class DesignDetailsPage extends JPanel {
     /* ===================== UI helpers ===================== */
 
     private RoundedPanel cardPanel() {
-        RoundedPanel p = new RoundedPanel(16, WHITE);
-        p.setBorderPaint(BORDER);
+        RoundedPanel p = new RoundedPanel(16, UiKit.WHITE);
+        p.setBorderPaint(UiKit.BORDER);
         p.setOpaque(false);
         return p;
     }
 
     private JLabel sectionTitle(String text) {
         JLabel l = new JLabel(text);
-        l.setForeground(TEXT);
+        l.setForeground(UiKit.TEXT);
         l.setFont(UiKit.scaled(l, Font.BOLD, 1.00f));
         return l;
-    }
-
-    private JLabel keyLabel(String text) {
-        JLabel l = new JLabel(text);
-        l.setForeground(MUTED);
-        l.setFont(UiKit.scaled(l, Font.PLAIN, 0.90f));
-        return l;
-    }
-
-    private JComponent divider() {
-        JPanel d = new JPanel();
-        d.setOpaque(true);
-        d.setBackground(BORDER);
-        d.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
-        d.setPreferredSize(new Dimension(0, 1));
-        d.setBorder(new EmptyBorder(8, 0, 8, 0));
-        return d;
     }
 
     private JToggleButton toggleChip(String text, boolean selected) {
@@ -923,8 +811,8 @@ public class DesignDetailsPage extends JPanel {
 
     private void styleToggle(AbstractButton b) {
         boolean sel = b.isSelected();
-        b.setBackground(sel ? PRIMARY : new Color(0xF3F4F6));
-        b.setForeground(sel ? Color.WHITE : TEXT);
+        b.setBackground(sel ? UiKit.PRIMARY : UiKit.META_PILL_BG);
+        b.setForeground(sel ? Color.WHITE : UiKit.TEXT);
         b.setBorder(new EmptyBorder(6, 10, 6, 10));
     }
 
@@ -932,11 +820,11 @@ public class DesignDetailsPage extends JPanel {
         JButton b = new JButton(text);
         b.setFocusPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setBackground(WHITE);
-        b.setForeground(TEXT);
+        b.setBackground(UiKit.WHITE);
+        b.setForeground(UiKit.TEXT);
         b.setFont(UiKit.scaled(b, Font.BOLD, 0.90f));
         b.setBorder(new CompoundBorder(
-                new LineBorder(BORDER, 1, true),
+                new LineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(8, 12, 8, 12)
         ));
         return b;
@@ -946,8 +834,8 @@ public class DesignDetailsPage extends JPanel {
         JButton b = new JButton(text);
         b.setFocusPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setBackground(WHITE);
-        b.setForeground(DANGER);
+        b.setBackground(UiKit.WHITE);
+        b.setForeground(UiKit.DANGER);
         b.setFont(UiKit.scaled(b, Font.BOLD, 0.90f));
         b.setBorder(new CompoundBorder(
                 new LineBorder(new Color(0xFCA5A5), 1, true),
@@ -956,55 +844,17 @@ public class DesignDetailsPage extends JPanel {
         return b;
     }
 
-    private JButton primaryPill(String text) {
-        JButton b = new JButton(text);
-        b.setFocusPainted(false);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setBackground(PRIMARY);
-        b.setForeground(Color.WHITE);
-        b.setFont(UiKit.scaled(b, Font.BOLD, 0.92f));
-        b.setBorder(new EmptyBorder(10, 14, 10, 14));
-        return b;
-    }
-
-    private JButton primaryGradientPill(String text) {
-        JButton b = new JButton(text);
-        b.setFocusPainted(false);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setBackground(PRIMARY_DARK);
-        b.setForeground(Color.WHITE);
-        b.setFont(UiKit.scaled(b, Font.BOLD, 0.92f));
-        b.setBorder(new EmptyBorder(10, 14, 10, 14));
-        return b;
-    }
-
     private JButton iconPill(String text) {
         JButton b = UiKit.iconButton(text);
-        b.setBackground(new Color(0xF9FAFB));
+        b.setBackground(UiKit.CARD_HOVER);
         b.setBorder(new CompoundBorder(
-                new LineBorder(BORDER, 1, true),
+                new LineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(6, 8, 6, 8)
         ));
         return b;
     }
 
-    private JComponent colorDot(Color c) {
-        JPanel p = new JPanel() {
-            @Override protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(c);
-                g2.fillOval(0, 0, getWidth() - 1, getHeight() - 1);
-                g2.setColor(BORDER);
-                g2.drawOval(0, 0, getWidth() - 1, getHeight() - 1);
-                g2.dispose();
-            }
-        };
-        p.setOpaque(false);
-        p.setPreferredSize(new Dimension(18, 18));
-        return p;
-    }
+    
 
     /* ===================== Utilities ===================== */
 
@@ -1061,6 +911,36 @@ public class DesignDetailsPage extends JPanel {
         }
     }
 
+    /* ===================== Robust reflection getters (avoid model mismatches) ===================== */
+
+    private static String getString(Object obj, String... methodNames) {
+        if (obj == null) return null;
+        for (String m : methodNames) {
+            try {
+                Method mm = obj.getClass().getMethod(m);
+                Object v = mm.invoke(obj);
+                if (v == null) continue;
+                String s = String.valueOf(v);
+                if (!s.trim().isEmpty()) return s;
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
+    private static long getLong(Object obj, String... methodNames) {
+        if (obj == null) return 0L;
+        for (String m : methodNames) {
+            try {
+                Method mm = obj.getClass().getMethod(m);
+                Object v = mm.invoke(obj);
+                if (v == null) continue;
+                if (v instanceof Number) return ((Number) v).longValue();
+                try { return Long.parseLong(String.valueOf(v)); } catch (Exception ignored2) {}
+            } catch (Throwable ignored) {}
+        }
+        return 0L;
+    }
+
     /* ===================== Small custom components ===================== */
 
     private static class AvatarCircle extends JPanel {
@@ -1082,12 +962,12 @@ public class DesignDetailsPage extends JPanel {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             int w = getWidth();
             int h = getHeight();
-            g2.setColor(new Color(0xE5E7EB));
+            g2.setColor(UiKit.META_PILL_BG);
             g2.fillOval(0, 0, w - 1, h - 1);
-            g2.setColor(new Color(0x9CA3AF));
+            g2.setColor(UiKit.MUTED);
             g2.drawOval(0, 0, w - 1, h - 1);
 
-            g2.setColor(TEXT);
+            g2.setColor(UiKit.TEXT);
             Font f = getFont().deriveFont(Font.BOLD, 12.5f);
             g2.setFont(f);
             FontMetrics fm = g2.getFontMetrics();

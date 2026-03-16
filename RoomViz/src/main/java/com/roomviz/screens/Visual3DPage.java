@@ -1,17 +1,19 @@
-// (FULL FILE) — paste this entire file exactly as-is:
 package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
+import com.roomviz.data.Session;
 import com.roomviz.model.Design;
 import com.roomviz.model.FurnitureItem;
 import com.roomviz.model.RoomSpec;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
@@ -22,27 +24,24 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 /**
  * 3D Visual Page – simple Java2D raster renderer.
  *
- * ✅ Step 1 enforcement:
- * - NO silent auto-create designs.
  * - If no design is selected -> show empty state:
  *   "Select or create a design first" + buttons Library / New Design.
- *
- * ✅ Other (existing) fixes preserved:
  * - Safe getters for Design.layoutX/layoutY/layoutWidth/layoutHeight (handles primitive double OR Double)
  * - Safe getters for Furniture rotation (getRotation / getRotationDeg / etc)
  * - Converts furniture (canvas coords) -> room-local coords for correct 3D placement
  * - Room size prefers layout bounds (or fallback)
  *
- * ✅ FIX (L-Shape support):
+ * L-Shape support:
  * - 3D room respects L-Shape cut-out
  * - 3D floor becomes 2 quads for L-Shape, and walls follow L perimeter
  * - Rectangle rooms get full perimeter walls (4 sides)
  *
- * ✅ FIX (Resize stability):
+ * Resize stability:
  * - REMOVED auto zoomToFit() spam during resize (causes drift/jump)
  * - Uses a constant lens FOV angle; projection uses derived focal length
  * - Optional: debounced fit can be triggered manually with Fit button / key
@@ -54,6 +53,13 @@ public class Visual3DPage extends JPanel {
     private final Router router;
     private final AppState appState;
 
+    // session (used for role-based UI in empty state)
+    private final Session session;
+
+    // Shell callback: hide/show chrome (topbar/sidebar) for presentation mode
+    private final Consumer<Boolean> onPresentationModeChanged;
+    private boolean presentationMode = false;
+
     private final JLabel toast = new JLabel("3D view updated");
     private final JPopupMenu lightingMenu = new JPopupMenu();
 
@@ -61,11 +67,42 @@ public class Visual3DPage extends JPanel {
     private JButton lightingDropdownBtn;
 
     private final RendererPanel renderer;
+    private JComponent viewDockRef;
+    private JComponent inspectorPanelRef;
+    private JSplitPane dockCenterSplitRef;
+    private JSplitPane visualMainSplitRef;
 
+    /**
+     * Backwards-compatible constructor (3 args)
+     */
     public Visual3DPage(AppFrame frame, Router router, AppState appState) {
+        this(frame, router, appState, null, null);
+    }
+
+    /**
+     * Backwards-compatible constructor (4 args) with presentation callback
+     */
+    public Visual3DPage(AppFrame frame,
+                        Router router,
+                        AppState appState,
+                        Consumer<Boolean> onPresentationModeChanged) {
+        this(frame, router, appState, null, onPresentationModeChanged);
+    }
+
+    /**
+     * Recommended constructor (matches ShellScreen call)
+     */
+    public Visual3DPage(AppFrame frame,
+                        Router router,
+                        AppState appState,
+                        Session session,
+                        Consumer<Boolean> onPresentationModeChanged) {
+
         this.frame = frame;
         this.router = router;
         this.appState = appState;
+        this.session = session;
+        this.onPresentationModeChanged = onPresentationModeChanged;
 
         setLayout(new BorderLayout());
         setBackground(UiKit.BG);
@@ -73,27 +110,54 @@ public class Visual3DPage extends JPanel {
 
         renderer = new RendererPanel();
 
-        // ✅ Build menu once (safe even if design is not selected yet)
+        // Build menu once (safe even if design is not selected yet)
         buildLightingMenu();
 
-        // ✅ Build the correct UI for current state (design selected or not)
+        // Build the correct UI for current state (design selected or not)
         rebuildUI();
 
-        // ✅ Refresh on navigation (CRITICAL - this page instance is created once in ShellScreen)
+        addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                applyResponsiveLayout();
+            }
+        });
+
+        // Refresh on navigation (CRITICAL - this page instance is created once in ShellScreen)
         try {
             if (router != null) {
                 router.addListener(key -> {
                     if (ScreenKeys.VIEW_3D.equals(key)) {
                         rebuildUI();
+                    } else {
+                        // If we are leaving 3D while presentation is ON, restore shell chrome
+                        forceExitPresentationModeIfOn();
                     }
                 });
             }
         } catch (Throwable ignored) { }
     }
 
-    /** ✅ Rebuild screen depending on whether a design is selected */
+    /** If presentation mode is ON, force it OFF (restores Shell chrome). */
+    private void forceExitPresentationModeIfOn() {
+        if (!presentationMode) return;
+        presentationMode = false;
+
+        // inform ShellScreen to show chrome again
+        try {
+            if (onPresentationModeChanged != null) onPresentationModeChanged.accept(false);
+        } catch (Throwable ignored) { }
+
+        revalidate();
+        repaint();
+    }
+
+    /** Rebuild screen depending on whether a design is selected */
     private void rebuildUI() {
         removeAll();
+        viewDockRef = null;
+        inspectorPanelRef = null;
+        dockCenterSplitRef = null;
+        visualMainSplitRef = null;
 
         if (getCurrentDesign() == null) {
             add(buildNoDesignState(), BorderLayout.CENTER);
@@ -108,13 +172,25 @@ public class Visual3DPage extends JPanel {
         revalidate();
         repaint();
 
-        // ✅ Ensure camera fits when returning to the 3D screen (ONE-TIME, not on every resize)
+        // Ensure camera fits when returning to the 3D screen (ONE-TIME, not on every resize)
         SwingUtilities.invokeLater(() -> {
             try { renderer.zoomToFit(); } catch (Throwable ignored) { }
+            applyResponsiveLayout();
         });
     }
 
     /* ========================== EMPTY STATE ========================== */
+
+    private boolean isCustomer() {
+        try {
+            return session != null
+                    && session.isLoggedIn()
+                    && session.getCurrentUser() != null
+                    && session.getCurrentUser().isCustomer();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
 
     private JComponent buildNoDesignState() {
         JPanel wrap = new JPanel(new GridBagLayout());
@@ -123,23 +199,23 @@ public class Visual3DPage extends JPanel {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, UiKit.WHITE);
         card.setBorderPaint(UiKit.BORDER);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(new EmptyBorder(18, 18, 18, 18));
-        card.setPreferredSize(new Dimension(560, 240));
+        card.setBorder(new EmptyBorder(28, 28, 28, 28));
 
-        JLabel title = new JLabel("Select or create a design first");
+        JLabel title = new JLabel("Select a design first");
         title.setForeground(UiKit.TEXT);
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel sub = new JLabel("<html>The 3D view renders the <b>currently selected design</b>.<br/>Go to the Design Library to pick one, or create a new design.</html>");
+        JLabel sub = new JLabel("<html>The 3D view renders the <b>currently selected design</b>.<br/>Go to the Design Library to pick one.</html>");
         sub.setForeground(UiKit.MUTED);
         sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
         sub.setBorder(new EmptyBorder(8, 0, 0, 0));
         sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        // Use FlowLayout so buttons wrap on small windows
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         btnRow.setOpaque(false);
-        btnRow.setBorder(new EmptyBorder(16, 0, 0, 0));
+        btnRow.setBorder(new EmptyBorder(12, 0, 0, 0));
         btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JButton goLibrary = UiKit.primaryButton("Go to Design Library");
@@ -147,26 +223,127 @@ public class Visual3DPage extends JPanel {
             if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
         });
 
-        JButton createNew = UiKit.ghostButton("Create New Design");
-        createNew.addActionListener(e -> {
-            if (router != null) router.show(ScreenKeys.NEW_DESIGN);
-        });
-
-        JButton backPlanner = UiKit.ghostButton("Back to Planner");
+        JButton backPlanner = UiKit.ghostButton("Back to 2D");
         backPlanner.addActionListener(e -> {
             if (router != null) router.show(ScreenKeys.PLANNER_2D);
         });
 
         btnRow.add(goLibrary);
-        btnRow.add(createNew);
         btnRow.add(backPlanner);
+
+        // Admin-only actions hidden for customers
+        if (!isCustomer()) {
+            JButton createNew = UiKit.ghostButton("Create New Design");
+            createNew.addActionListener(e -> {
+                if (router != null) router.show(ScreenKeys.NEW_DESIGN);
+            });
+
+            JButton importBtn = UiKit.ghostButton("Import Design JSON");
+            importBtn.addActionListener(e -> onImportDesigns());
+
+            btnRow.add(createNew);
+            btnRow.add(importBtn);
+        }
 
         card.add(title);
         card.add(sub);
         card.add(btnRow);
 
-        wrap.add(card);
+        Dimension pref = card.getPreferredSize();
+        card.setMinimumSize(new Dimension(0, pref.height));
+        card.setPreferredSize(new Dimension(Math.min(780, pref.width), pref.height));
+        card.setMaximumSize(new Dimension(780, Integer.MAX_VALUE));
+
+        JPanel row = new JPanel();
+        row.setOpaque(false);
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.add(Box.createHorizontalGlue());
+        row.add(card);
+        row.add(Box.createHorizontalGlue());
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(24, 18, 24, 18);
+        wrap.add(row, gbc);
         return wrap;
+    }
+
+    private void onImportDesigns() {
+        if (isCustomer()) {
+            JOptionPane.showMessageDialog(this,
+                    "Import is admin-only.",
+                    "Access restricted", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        if (appState == null || appState.getRepo() == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Design repository not available.",
+                    "Cannot import", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import RoomViz Designs");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
+
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) return;
+
+        java.io.File in = chooser.getSelectedFile();
+        int importedCount = appState.getRepo().importFrom(in);
+
+        if (importedCount <= 0) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not import designs.\nPlease select a valid RoomViz export JSON file.",
+                    "Import Failed", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        java.util.List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
+        if (!all.isEmpty()) {
+            appState.setCurrentDesignId(all.get(0).getId());
+        }
+
+        JOptionPane.showMessageDialog(this,
+                "Imported " + importedCount + " design(s) from:\n" + in.getAbsolutePath(),
+                "Import Complete", JOptionPane.INFORMATION_MESSAGE);
+
+        rebuildUI();
+    }
+
+    private void applyResponsiveLayout() {
+        if (viewDockRef == null || inspectorPanelRef == null || dockCenterSplitRef == null || visualMainSplitRef == null) {
+            return;
+        }
+
+        int width = Math.max(getWidth(), 860);
+        int dockW = clampInt((int) Math.round(width * 0.09), 66, 92);
+        int inspectorW = clampInt((int) Math.round(width * 0.20), 200, 280);
+
+        if (width < 1180) inspectorW = 210;
+        if (width < 980) {
+            dockW = 66;
+            inspectorW = 200;
+        }
+
+        viewDockRef.setMinimumSize(new Dimension(62, 0));
+        viewDockRef.setPreferredSize(new Dimension(dockW, 0));
+
+        inspectorPanelRef.setMinimumSize(new Dimension(180, 0));
+        inspectorPanelRef.setPreferredSize(new Dimension(inspectorW, 0));
+
+        int leftCenterWidth = Math.max(360, width - inspectorW - 30);
+        int divider1 = clampInt(dockW, 62, Math.max(74, leftCenterWidth - 340));
+        dockCenterSplitRef.setDividerLocation(divider1);
+
+        int divider2 = clampInt(width - inspectorW - 12, 360, Math.max(430, width - 170));
+        visualMainSplitRef.setDividerLocation(divider2);
     }
 
     /* ========================== TOP BAR ========================== */
@@ -174,49 +351,65 @@ public class Visual3DPage extends JPanel {
     private JComponent buildTopBar() {
         UiKit.RoundedPanel bar = new UiKit.RoundedPanel(16, new Color(0x111827));
         bar.setBorderPaint(new Color(0x0B1220));
-        bar.setLayout(new BorderLayout(10, 0));
-        bar.setBorder(new EmptyBorder(10, 12, 10, 12));
+        bar.setLayout(new BoxLayout(bar, BoxLayout.Y_AXIS));
+        bar.setBorder(new EmptyBorder(8, 10, 8, 10));
 
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        left.setOpaque(false);
-
-        JButton back = darkButton("←  Back to 2D");
-        back.addActionListener(e -> {
-            if (router != null) router.show(ScreenKeys.PLANNER_2D);
-        });
-
-        JLabel saved = pill("✓  Saved", new Color(0x064E3B), new Color(0x34D399));
-
-        left.add(back);
-        left.add(saved);
+        JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        topRow.setOpaque(false);
 
         JLabel title = new JLabel(getDesignTitleForHeader());
         title.setForeground(new Color(0xE5E7EB));
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 12.8f));
-        title.setHorizontalAlignment(SwingConstants.CENTER);
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 12.0f));
 
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        right.setOpaque(false);
+        JLabel saved = pill("✓  Synced", new Color(0x064E3B), new Color(0x34D399));
+        topRow.add(title);
+        topRow.add(saved);
 
-        JButton snapshot = primaryDarkButton("📷  Snapshot");
+        JPanel actionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        actionsRow.setOpaque(false);
+        actionsRow.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+        JButton back = darkButton("← Back to 2D");
+        back.addActionListener(e -> {
+            forceExitPresentationModeIfOn();
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+        });
+
+        JButton snapshot = primaryDarkButton(FontAwesome.CAMERA + " Snapshot");
         snapshot.addActionListener(e -> renderer.exportSnapshotDialog());
 
-        JButton present = darkButton("▣  Presentation Mode");
-        present.addActionListener(e -> JOptionPane.showMessageDialog(
-                this,
-                "Presentation Mode (demo).\nTip: extend by hiding side panels + going fullscreen.",
-                "Presentation Mode",
-                JOptionPane.INFORMATION_MESSAGE
-        ));
+        JButton present = darkButton(presentationMode ? FontAwesome.SQUARE_REGULAR + " Exit Presentation" : FontAwesome.VIDEO + " Presentation Mode");
+        present.addActionListener(e -> togglePresentationMode(present));
 
-        right.add(snapshot);
-        right.add(present);
+        JLabel hint = new JLabel("Drag to orbit • Mouse wheel to zoom • F to fit");
+        hint.setForeground(new Color(0x9CA3AF));
+        hint.setFont(hint.getFont().deriveFont(Font.PLAIN, 10.0f));
 
-        bar.add(left, BorderLayout.WEST);
-        bar.add(title, BorderLayout.CENTER);
-        bar.add(right, BorderLayout.EAST);
+        actionsRow.add(back);
+        actionsRow.add(snapshot);
+        actionsRow.add(present);
+        actionsRow.add(hint);
+
+        bar.add(topRow);
+        bar.add(actionsRow);
 
         return bar;
+    }
+
+    private void togglePresentationMode(JButton presentBtn) {
+        presentationMode = !presentationMode;
+
+        if (presentBtn != null) {
+            presentBtn.setText(presentationMode ? FontAwesome.SQUARE_REGULAR + " Exit Presentation" : FontAwesome.VIDEO + " Presentation Mode");
+        }
+
+        try {
+            if (onPresentationModeChanged != null) onPresentationModeChanged.accept(presentationMode);
+        } catch (Throwable ignored) { }
+
+        showToast();
+        revalidate();
+        repaint();
     }
 
     private String getDesignTitleForHeader() {
@@ -237,7 +430,8 @@ public class Visual3DPage extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         b.setForeground(new Color(0xE5E7EB));
         b.setBackground(new Color(0x1F2937));
-        b.setBorder(new EmptyBorder(8, 12, 8, 12));
+        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.0f));
+        b.setBorder(new EmptyBorder(6, 10, 6, 10));
         return b;
     }
 
@@ -247,7 +441,8 @@ public class Visual3DPage extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         b.setForeground(Color.WHITE);
         b.setBackground(new Color(0x2563EB));
-        b.setBorder(new EmptyBorder(8, 12, 8, 12));
+        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.0f));
+        b.setBorder(new EmptyBorder(6, 10, 6, 10));
         return b;
     }
 
@@ -256,60 +451,117 @@ public class Visual3DPage extends JPanel {
         l.setOpaque(true);
         l.setBackground(bg);
         l.setForeground(fg);
-        l.setFont(l.getFont().deriveFont(Font.BOLD, 11.5f));
-        l.setBorder(new EmptyBorder(6, 10, 6, 10));
+        l.setFont(l.getFont().deriveFont(Font.BOLD, 10.5f));
+        l.setBorder(new EmptyBorder(4, 8, 4, 8));
         return l;
     }
 
     /* ========================== MAIN LAYOUT ========================== */
 
     private JComponent buildMain() {
-        JPanel wrap = new JPanel(new BorderLayout(12, 12));
+        JPanel wrap = new JPanel(new BorderLayout(10, 10));
         wrap.setOpaque(false);
 
-        wrap.add(buildViewDock(), BorderLayout.WEST);
+        viewDockRef = buildViewDock();
+        inspectorPanelRef = buildRightPanel();
 
         UiKit.RoundedPanel canvasCard = new UiKit.RoundedPanel(18, Color.BLACK);
         canvasCard.setBorderPaint(new Color(255, 255, 255, 18));
         canvasCard.setLayout(new BorderLayout());
         canvasCard.add(renderer, BorderLayout.CENTER);
-        wrap.add(canvasCard, BorderLayout.CENTER);
 
-        wrap.add(buildRightPanel(), BorderLayout.EAST);
+        dockCenterSplitRef = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, viewDockRef, canvasCard);
+        dockCenterSplitRef.setBorder(BorderFactory.createEmptyBorder());
+        dockCenterSplitRef.setOpaque(false);
+        dockCenterSplitRef.setContinuousLayout(true);
+        dockCenterSplitRef.setOneTouchExpandable(false);
+        dockCenterSplitRef.setDividerSize(6);
+        dockCenterSplitRef.setResizeWeight(0.0);
+
+        visualMainSplitRef = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, dockCenterSplitRef, inspectorPanelRef);
+        visualMainSplitRef.setBorder(BorderFactory.createEmptyBorder());
+        visualMainSplitRef.setOpaque(false);
+        visualMainSplitRef.setContinuousLayout(true);
+        visualMainSplitRef.setOneTouchExpandable(false);
+        visualMainSplitRef.setDividerSize(6);
+        visualMainSplitRef.setResizeWeight(1.0);
+
+        wrap.add(visualMainSplitRef, BorderLayout.CENTER);
 
         return wrap;
     }
 
     private JComponent buildRightPanel() {
-        JPanel right = new JPanel();
-        right.setOpaque(false);
+        UiKit.RoundedPanel right = new UiKit.RoundedPanel(16, new Color(0x111827));
+        right.setBorderPaint(new Color(255, 255, 255, 20));
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-        right.setPreferredSize(new Dimension(260, 0));
+        right.setMinimumSize(new Dimension(180, 0));
+        right.setPreferredSize(new Dimension(220, 0));
+        right.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        UiKit.RoundedPanel lightingCard = new UiKit.RoundedPanel(16, new Color(0x111827));
+        UiKit.RoundedPanel lightingCard = new UiKit.RoundedPanel(14, new Color(0x1E293B));
         lightingCard.setBorderPaint(new Color(255, 255, 255, 22));
-        lightingCard.setLayout(new BorderLayout());
-        lightingCard.setBorder(new EmptyBorder(12, 12, 12, 12));
+        lightingCard.setLayout(new BoxLayout(lightingCard, BoxLayout.Y_AXIS));
+        lightingCard.setBorder(new EmptyBorder(10, 10, 10, 10));
+        lightingCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+        lightingCard.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel t = new JLabel("Lighting Preset");
         t.setForeground(new Color(0xD1D5DB));
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 11.2f));
+        t.setFont(t.getFont().deriveFont(Font.BOLD, 10.8f));
+        t.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         lightingDropdownBtn = darkButton(" " + lightingPreset + "  ▾");
         lightingDropdownBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        lightingDropdownBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
         lightingDropdownBtn.addActionListener(e -> showLightingMenu(lightingDropdownBtn));
 
-        lightingCard.add(t, BorderLayout.NORTH);
-        lightingCard.add(lightingDropdownBtn, BorderLayout.CENTER);
+        lightingCard.add(t);
+        lightingCard.add(Box.createVerticalStrut(8));
+        lightingCard.add(lightingDropdownBtn);
+
+        UiKit.RoundedPanel helpCard = new UiKit.RoundedPanel(14, new Color(0x1E293B));
+        helpCard.setBorderPaint(new Color(255, 255, 255, 22));
+        helpCard.setLayout(new BoxLayout(helpCard, BoxLayout.Y_AXIS));
+        helpCard.setBorder(new EmptyBorder(10, 10, 10, 10));
+        helpCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 116));
+        helpCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel h1 = new JLabel("Quick Controls");
+        h1.setForeground(new Color(0xD1D5DB));
+        h1.setFont(h1.getFont().deriveFont(Font.BOLD, 10.8f));
+
+        JLabel h2 = new JLabel("R: reset camera");
+        h2.setForeground(new Color(0x9CA3AF));
+        h2.setFont(h2.getFont().deriveFont(Font.PLAIN, 11f));
+
+        JLabel h3 = new JLabel("F: zoom to fit");
+        h3.setForeground(new Color(0x9CA3AF));
+        h3.setFont(h3.getFont().deriveFont(Font.PLAIN, 11f));
+
+        JLabel h4 = new JLabel("Drag: orbit");
+        h4.setForeground(new Color(0x9CA3AF));
+        h4.setFont(h4.getFont().deriveFont(Font.PLAIN, 11f));
+
+        helpCard.add(h1);
+        helpCard.add(Box.createVerticalStrut(8));
+        helpCard.add(h2);
+        helpCard.add(Box.createVerticalStrut(4));
+        helpCard.add(h3);
+        helpCard.add(Box.createVerticalStrut(4));
+        helpCard.add(h4);
 
         toast.setOpaque(true);
-        toast.setBackground(new Color(0x111827));
+        toast.setBackground(new Color(0x1E293B));
         toast.setForeground(new Color(0xE5E7EB));
         toast.setBorder(new EmptyBorder(10, 12, 10, 12));
         toast.setVisible(false);
         toast.setAlignmentX(Component.LEFT_ALIGNMENT);
+        toast.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
 
         right.add(lightingCard);
+        right.add(Box.createVerticalStrut(12));
+        right.add(helpCard);
         right.add(Box.createVerticalStrut(12));
         right.add(toast);
         right.add(Box.createVerticalGlue());
@@ -320,37 +572,45 @@ public class Visual3DPage extends JPanel {
     private JComponent buildViewDock() {
         UiKit.RoundedPanel dock = new UiKit.RoundedPanel(16, new Color(0x111827));
         dock.setBorderPaint(new Color(255, 255, 255, 22));
-        dock.setLayout(new BorderLayout());
-        dock.setBorder(new EmptyBorder(10, 10, 10, 10));
-        dock.setPreferredSize(new Dimension(96, 0));
+        dock.setLayout(new BoxLayout(dock, BoxLayout.Y_AXIS));
+        dock.setBorder(new EmptyBorder(8, 8, 8, 8));
+        dock.setMinimumSize(new Dimension(62, 0));
+        dock.setPreferredSize(new Dimension(76, 0));
 
         JLabel title = new JLabel("View");
         title.setForeground(new Color(0xD1D5DB));
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 11.0f));
-        title.setBorder(new EmptyBorder(0, 2, 8, 0));
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 10.2f));
+        title.setBorder(new EmptyBorder(0, 2, 6, 0));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel btns = new JPanel(new GridLayout(4, 1, 0, 10));
+        JPanel btns = new JPanel();
         btns.setOpaque(false);
+        btns.setLayout(new BoxLayout(btns, BoxLayout.Y_AXIS));
+        btns.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JButton reset = iconDockButton("⟳", "Reset camera");
+        JButton reset = iconDockButton(FontAwesome.ARROWS_ROTATE, "Reset camera");
         reset.addActionListener(e -> { renderer.resetCamera(); showToast(); });
 
-        JButton center = iconDockButton("✥", "Center scene");
+        JButton center = iconDockButton(FontAwesome.CROSSHAIRS, "Center scene");
         center.addActionListener(e -> { renderer.centerScene(); showToast(); });
 
-        JButton zoom = iconDockButton("🔍", "Zoom to fit");
+        JButton zoom = iconDockButton(FontAwesome.SEARCH, "Zoom to fit");
         zoom.addActionListener(e -> { renderer.zoomToFit(); showToast(); });
 
-        JButton home = iconDockButton("⌂", "Default view");
+        JButton home = iconDockButton(FontAwesome.HOUSE, "Default view");
         home.addActionListener(e -> { renderer.resetCamera(); renderer.zoomToFit(); showToast(); });
 
         btns.add(reset);
+        btns.add(Box.createVerticalStrut(6));
         btns.add(center);
+        btns.add(Box.createVerticalStrut(6));
         btns.add(zoom);
+        btns.add(Box.createVerticalStrut(6));
         btns.add(home);
 
-        dock.add(title, BorderLayout.NORTH);
-        dock.add(btns, BorderLayout.CENTER);
+        dock.add(title);
+        dock.add(btns);
+        dock.add(Box.createVerticalGlue());
         return dock;
     }
 
@@ -361,7 +621,11 @@ public class Visual3DPage extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         b.setForeground(Color.WHITE);
         b.setBackground(new Color(0x2563EB));
-        b.setBorder(new EmptyBorder(10, 0, 10, 0));
+        b.setFont(FontAwesome.solid(14f));
+        b.setBorder(new EmptyBorder(7, 0, 7, 0));
+        b.setPreferredSize(new Dimension(52, 42));
+        b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        b.setAlignmentX(Component.LEFT_ALIGNMENT);
         return b;
     }
 
@@ -371,13 +635,16 @@ public class Visual3DPage extends JPanel {
         lightingMenu.setBorder(new LineBorder(new Color(0, 0, 0, 30), 1, true));
         lightingMenu.setBackground(new Color(17, 24, 39, 245));
 
-        lightingMenu.add(menuItem("Day", "☀", () -> setLighting("Day")));
-        lightingMenu.add(menuItem("Night", "☾", () -> setLighting("Night")));
-        lightingMenu.add(menuItem("Sunset", "☀", () -> setLighting("Sunset")));
+        lightingMenu.add(menuItem("Day", FontAwesome.SUN, () -> setLighting("Day")));
+        lightingMenu.add(menuItem("Night", FontAwesome.SQUARE_REGULAR, () -> setLighting("Night")));
+        lightingMenu.add(menuItem("Sunset", FontAwesome.SUN, () -> setLighting("Sunset")));
     }
 
     private JMenuItem menuItem(String label, String icon, Runnable action) {
         JMenuItem item = new JMenuItem(icon + "  " + label);
+        if (FontAwesome.SUN.equals(icon) || FontAwesome.SQUARE_REGULAR.equals(icon)) {
+             item.setFont(FontAwesome.solid(13f));
+        }
         item.setForeground(new Color(0xE5E7EB));
         item.setBackground(new Color(17, 24, 39, 245));
         item.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -405,12 +672,12 @@ public class Visual3DPage extends JPanel {
         t.start();
     }
 
-    /* ========================== DESIGN LOOKUP (Step 1 safe) ========================== */
+    /* ========================== DESIGN LOOKUP ========================== */
 
     private Design getCurrentDesign() {
         if (appState == null) return null;
-        // ✅ Step 1: NEVER auto-create here
         try {
+            // your AppState has safe "non-creating" behavior
             return appState.getCurrentDesign();
         } catch (Throwable ignored) {
             return null;
@@ -436,6 +703,10 @@ public class Visual3DPage extends JPanel {
         }
     }
 
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     /* ========================== RENDERER PANEL ========================== */
 
     private class RendererPanel extends JPanel {
@@ -449,7 +720,7 @@ public class Visual3DPage extends JPanel {
 
         private String preset = "Day";
 
-        // ✅ Constant camera lens (stable on resize)
+        // Constant camera lens (stable on resize)
         private final double fovDeg = 58.0;
         private final double fitPadding = 1.18;
 
@@ -505,7 +776,6 @@ public class Visual3DPage extends JPanel {
                 }
             });
 
-            // ✅ FIX: DO NOT change camera distance continuously during resize (this causes the drift/jump)
             addComponentListener(new ComponentAdapter() {
                 @Override public void componentResized(ComponentEvent e) {
                     repaint();
@@ -541,17 +811,26 @@ public class Visual3DPage extends JPanel {
             Double lh = getLayoutH(d);
 
             if (lw != null && lh != null) {
-                roomW = Math.max(520, lw);
-                roomD = Math.max(520, lh);
+                roomW = lw;
+                roomD = lh;
+            } else if (d.getRoomSpec() != null && d.getRoomSpec().getWidth() > 0 && d.getRoomSpec().getLength() > 0) {
+                roomW = d.getRoomSpec().getWidth();
+                roomD = d.getRoomSpec().getLength();
             } else {
                 Bounds b = computeSceneBounds();
-                roomW = Math.max(520, b.w);
-                roomD = Math.max(520, b.d);
+                roomW = b.w;
+                roomD = b.d;
+            }
+            // Scale proportionally so larger dimension is at least 520
+            double maxDim = Math.max(roomW, roomD);
+            if (maxDim < 520 && maxDim > 0) {
+                double s = 520.0 / maxDim;
+                roomW *= s;
+                roomD *= s;
             }
 
             double maxSpan = Math.max(roomW, roomD) * fitPadding;
 
-            // ✅ Constant lens: distance needed so maxSpan fits in view
             double fovRad = Math.toRadians(fovDeg);
             double half = maxSpan * 0.5;
             double needed = half / Math.tan(fovRad * 0.5);
@@ -596,7 +875,6 @@ public class Visual3DPage extends JPanel {
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
 
-            // ✅ If design disappears (deleted / unselected), show empty state safely
             if (getCurrentDesign() == null) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setColor(Color.BLACK);
@@ -695,12 +973,22 @@ public class Visual3DPage extends JPanel {
             Double lh = getLayoutH(d);
 
             if (lw != null && lh != null) {
-                roomW = Math.max(520, lw);
-                roomD = Math.max(520, lh);
+                roomW = lw;
+                roomD = lh;
+            } else if (spec != null && spec.getWidth() > 0 && spec.getLength() > 0) {
+                roomW = spec.getWidth();
+                roomD = spec.getLength();
             } else {
                 Bounds b = computeSceneBounds();
-                roomW = Math.max(520, b.w);
-                roomD = Math.max(520, b.d);
+                roomW = b.w;
+                roomD = b.d;
+            }
+            // Scale proportionally so larger dimension is at least 520
+            double maxDim = Math.max(roomW, roomD);
+            if (maxDim < 520 && maxDim > 0) {
+                double s = 520.0 / maxDim;
+                roomW *= s;
+                roomD *= s;
             }
 
             double floorY = 0;
@@ -783,13 +1071,30 @@ public class Visual3DPage extends JPanel {
             double roomW = 520;
             double roomD = 520;
 
+            // Raw layout bounds (pixel space from 2D canvas)
             Double lw = getLayoutW(design);
             Double lh = getLayoutH(design);
+            double rawRoomW = (lw != null) ? lw : 520;
+            double rawRoomD = (lh != null) ? lh : 520;
+
+            // 3D room dimensions: use layout bounds or RoomSpec
+            RoomSpec fSpec = design.getRoomSpec();
             if (lw != null && lh != null) {
-                roomW = Math.max(520, lw);
-                roomD = Math.max(520, lh);
+                roomW = lw;
+                roomD = lh;
+            } else if (fSpec != null && fSpec.getWidth() > 0 && fSpec.getLength() > 0) {
+                roomW = fSpec.getWidth();
+                roomD = fSpec.getLength();
+            }
+            // Scale proportionally so larger dimension is at least 520
+            double maxFDim = Math.max(roomW, roomD);
+            if (maxFDim < 520 && maxFDim > 0) {
+                double s = 520.0 / maxFDim;
+                roomW *= s;
+                roomD *= s;
             }
 
+            // Normalize furniture position to 0..1 relative to 2D layout, then map to 3D
             double lx = safeX(it);
             double lz = safeY(it);
 
@@ -800,22 +1105,33 @@ public class Visual3DPage extends JPanel {
                 lz = safeY(it) - lyo;
             }
 
+            // Convert pixel pos to ratio (0..1), then scale to 3D room dims
+            double ratioX = lx / Math.max(1, rawRoomW);
+            double ratioZ = lz / Math.max(1, rawRoomD);
+            double ratioW = w / Math.max(1, rawRoomW);
+            double ratioD = d / Math.max(1, rawRoomD);
+
+            double fx = ratioX * roomW;
+            double fz = ratioZ * roomD;
+            double fw = ratioW * roomW;
+            double fd = ratioD * roomD;
+
             Vec3 c = new Vec3(
-                    (lx + w / 2.0) - roomW / 2.0 + sceneCenter.x,
+                    (fx + fw / 2.0) - roomW / 2.0 + sceneCenter.x,
                     0,
-                    (lz + d / 2.0) - roomD / 2.0 + sceneCenter.z
+                    (fz + fd / 2.0) - roomD / 2.0 + sceneCenter.z
             );
 
             String kind = safeKind(it);
 
             if ("TABLE_ROUND".equals(kind)) {
-                buildRoundTable(faces, c, w, d, rot, base);
+                buildRoundTable(faces, c, fw, fd, rot, base);
             } else if ("TABLE_RECT".equals(kind)) {
-                buildRectTable(faces, c, w, d, rot, base);
+                buildRectTable(faces, c, fw, fd, rot, base);
             } else if ("CHAIR".equals(kind)) {
-                buildChair(faces, c, w, d, rot, base);
+                buildChair(faces, c, fw, fd, rot, base);
             } else {
-                addBox(faces, c, w, 60, d, rot, base);
+                addBox(faces, c, fw, 60, fd, rot, base);
             }
 
             return faces;
@@ -988,7 +1304,6 @@ public class Visual3DPage extends JPanel {
 
             projected.sort(Comparator.comparingDouble(a -> -a.avgDepth));
 
-            // ✅ FIX: Use constant FOV angle -> compute focal length from panel size
             double fovRad = Math.toRadians(fovDeg);
             double focal = (Math.min(w, h) * 0.5) / Math.tan(fovRad * 0.5);
 

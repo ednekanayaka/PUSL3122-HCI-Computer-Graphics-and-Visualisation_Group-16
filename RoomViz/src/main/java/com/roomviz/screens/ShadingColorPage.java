@@ -6,6 +6,7 @@ import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
 import com.roomviz.model.Design;
 import com.roomviz.model.FurnitureItem;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -13,27 +14,21 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.List;
 
 /**
- * Shading & Color Tools page (Swing UI) – polished + real AppState integration.
+ * Shading & Color Tools page (Swing UI).
  *
- * ✅ Updated:
- * - Uses UiKit.scaled(...) for all fonts (works with Small/Medium/Large)
- * - Uses UiKit colors (works with High Contrast)
- * - Safe guards for null appState/repo/router
+ * Undo/Redo support:
+ * - When Apply Changes is pressed, we push a BEFORE snapshot and record an AFTER snapshot
+ *   into AppState history, so Planner2D undo/redo works for color/shading/material/lighting changes.
  *
- * ✅ NEW (Wiring Fix - Step 1):
- * - NO MORE silent auto-create designs.
- * - If no design is selected -> show a proper empty state:
- *   "Select or create a design first" + buttons to go Library / New Design.
- *
- * ✅ CRITICAL FIX:
- * - This screen instance is created ONCE in ShellScreen.
- * - So we must REBUILD UI when navigating here, otherwise it gets stuck in empty state.
+ * - If no design is selected -> show empty state.
+ * - Rebuild UI on navigation here.
  */
 public class ShadingColorPage extends JPanel {
 
@@ -64,10 +59,10 @@ public class ShadingColorPage extends JPanel {
     private final JButton glossBtn = new JButton("Gloss");
 
     // Lighting buttons
-    private final JButton daylightBtn = new JButton("☀  Daylight");
-    private final JButton warmBtn = new JButton("🔥  Warm");
-    private final JButton coolBtn = new JButton("❄  Cool");
-    private final JButton neutralBtn = new JButton("◻  Neutral");
+    private final JButton daylightBtn = new JButton(FontAwesome.SUN + "  Daylight");
+    private final JButton warmBtn = new JButton(FontAwesome.FIRE + "  Warm");
+    private final JButton coolBtn = new JButton(FontAwesome.SNOWFLAKE + "  Cool");
+    private final JButton neutralBtn = new JButton(FontAwesome.SQUARE_REGULAR + "  Neutral");
 
     // Before/After
     private final JToggleButton beforeBtn = new JToggleButton("Before");
@@ -75,16 +70,14 @@ public class ShadingColorPage extends JPanel {
 
     private final PreviewPanel previewPanel = new PreviewPanel();
 
-    // ✅ Guards to avoid duplicate listeners when we rebuild UI
+    // Guards to avoid duplicate listeners when we rebuild UI
     private boolean actionsWired = false;
     private boolean hexDocWired = false;
 
-    /** ✅ Backward compatible constructor (old calls still work) */
     public ShadingColorPage(AppFrame frame) {
         this(frame, null, null);
     }
 
-    /** ✅ Constructor to match ShellScreen: (frame, router, appState) */
     public ShadingColorPage(AppFrame frame, Router router, AppState appState) {
         this.router = router;
         this.appState = appState;
@@ -93,10 +86,8 @@ public class ShadingColorPage extends JPanel {
         setBackground(UiKit.BG);
         setBorder(new EmptyBorder(14, 14, 14, 14));
 
-        // ✅ Build based on current state now
         rebuildUI();
 
-        // ✅ Refresh on navigation (CRITICAL)
         try {
             if (router != null) {
                 router.addListener(key -> {
@@ -108,7 +99,6 @@ public class ShadingColorPage extends JPanel {
         } catch (Throwable ignored) { }
     }
 
-    /** ✅ Rebuild screen depending on whether a design is selected */
     private void rebuildUI() {
         removeAll();
 
@@ -122,7 +112,6 @@ public class ShadingColorPage extends JPanel {
 
         add(buildCardShell(), BorderLayout.CENTER);
 
-        // Wire listeners only once (because rebuild happens multiple times)
         wireActionsOnce();
         wireLiveHexValidationOnce();
 
@@ -142,8 +131,7 @@ public class ShadingColorPage extends JPanel {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, UiKit.WHITE);
         card.setBorderPaint(UiKit.BORDER);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(new EmptyBorder(18, 18, 18, 18));
-        card.setPreferredSize(new Dimension(560, 240));
+        card.setBorder(new EmptyBorder(28, 28, 28, 28));
 
         JLabel title = new JLabel("Select or create a design first");
         title.setForeground(UiKit.TEXT);
@@ -156,9 +144,9 @@ public class ShadingColorPage extends JPanel {
         sub.setBorder(new EmptyBorder(8, 0, 0, 0));
         sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         btnRow.setOpaque(false);
-        btnRow.setBorder(new EmptyBorder(16, 0, 0, 0));
+        btnRow.setBorder(new EmptyBorder(12, 0, 0, 0));
         btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JButton goLibrary = UiKit.primaryButton("Go to Design Library");
@@ -171,6 +159,9 @@ public class ShadingColorPage extends JPanel {
             if (router != null) router.show(ScreenKeys.NEW_DESIGN);
         });
 
+        JButton importBtn = UiKit.ghostButton("Import Design JSON");
+        importBtn.addActionListener(e -> onImportDesigns());
+
         JButton backPlanner = UiKit.ghostButton("Back to Planner");
         backPlanner.addActionListener(e -> {
             if (router != null) router.show(ScreenKeys.PLANNER_2D);
@@ -178,14 +169,72 @@ public class ShadingColorPage extends JPanel {
 
         btnRow.add(goLibrary);
         btnRow.add(createNew);
+        btnRow.add(importBtn);
         btnRow.add(backPlanner);
 
         card.add(title);
         card.add(sub);
         card.add(btnRow);
 
-        wrap.add(card);
+        Dimension pref = card.getPreferredSize();
+        card.setMinimumSize(new Dimension(0, pref.height));
+        card.setPreferredSize(new Dimension(Math.min(760, pref.width), pref.height));
+        card.setMaximumSize(new Dimension(760, Integer.MAX_VALUE));
+
+        JPanel row = new JPanel();
+        row.setOpaque(false);
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.add(Box.createHorizontalGlue());
+        row.add(card);
+        row.add(Box.createHorizontalGlue());
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(24, 18, 24, 18);
+        wrap.add(row, gbc);
         return wrap;
+    }
+
+    private void onImportDesigns() {
+        if (appState == null || appState.getRepo() == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Design repository not available.",
+                    "Cannot import", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import RoomViz Designs");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
+
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) return;
+
+        java.io.File in = chooser.getSelectedFile();
+        int importedCount = appState.getRepo().importFrom(in);
+
+        if (importedCount <= 0) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not import designs.\nPlease select a valid RoomViz export JSON file.",
+                    "Import Failed", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        java.util.List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
+        if (!all.isEmpty()) {
+            appState.setCurrentDesignId(all.get(0).getId());
+        }
+
+        JOptionPane.showMessageDialog(this,
+                "Imported " + importedCount + " design(s) from:\n" + in.getAbsolutePath(),
+                "Import Complete", JOptionPane.INFORMATION_MESSAGE);
+
+        rebuildUI();
     }
 
     /* ========================= Wiring (ONLY ONCE) ========================= */
@@ -209,7 +258,6 @@ public class ShadingColorPage extends JPanel {
         beforeBtn.addActionListener(e -> { afterMode = false; syncUI(); });
         afterBtn.addActionListener(e -> { afterMode = true; syncUI(); });
 
-        // Enter key on hex field (only once)
         hexField.addActionListener(e -> {
             Color c = parseHex(hexField.getText());
             if (c != null) {
@@ -308,7 +356,7 @@ public class ShadingColorPage extends JPanel {
         title.setForeground(UiKit.TEXT);
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
 
-        JButton close = UiKit.iconButton("✕");
+        JButton close = UiKit.iconButton(FontAwesome.XMARK);
         close.setToolTipText("Close");
         close.addActionListener(e -> {
             if (router != null) router.show(ScreenKeys.PLANNER_2D);
@@ -429,8 +477,9 @@ public class ShadingColorPage extends JPanel {
         t.setForeground(UiKit.TEXT);
         t.setFont(UiKit.scaled(t, Font.BOLD, 0.98f));
 
-        JLabel info = new JLabel("ⓘ");
+        JLabel info = new JLabel(FontAwesome.CIRCLE_INFO);
         info.setForeground(UiKit.MUTED);
+        info.setFont(FontAwesome.solid(12f));
         info.setBorder(new EmptyBorder(0, 6, 0, 0));
 
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -701,7 +750,7 @@ public class ShadingColorPage extends JPanel {
         syncUI();
     }
 
-    /* ========================= REAL AppState + Design integration ========================= */
+    /* ========================= REAL AppState + Design integration (UNDO/REDO aware) ========================= */
 
     private ApplyResult applyToDesign() {
         if (appState == null) {
@@ -717,6 +766,9 @@ public class ShadingColorPage extends JPanel {
         if (items == null || items.isEmpty()) {
             return new ApplyResult(false, "No furniture items exist in this design yet.\nGo to Planner 2D and add an item first.");
         }
+
+        // ✅ BEFORE snapshot for undo
+        appState.pushBeforeChange(design.getId(), items);
 
         String hex = toHex(selectedColor);
         int updated = 0;
@@ -745,6 +797,9 @@ public class ShadingColorPage extends JPanel {
 
         design.setLastUpdatedEpochMs(System.currentTimeMillis());
         if (appState.getRepo() != null) appState.getRepo().upsert(design);
+
+        // ✅ AFTER snapshot for redo / undo correctness
+        appState.recordAfterChange(design.getId(), items);
 
         String target = globalTab ? "Global Design (all items)" : "Selected Item";
         String msg =
@@ -822,7 +877,7 @@ public class ShadingColorPage extends JPanel {
             b.setForeground(Color.WHITE);
             b.setBorder(new LineBorder(UiKit.PRIMARY, 1, true));
         } else {
-            b.setBackground(new Color(0xF3F4F6));
+            b.setBackground(UiKit.META_PILL_BG);
             b.setForeground(UiKit.TEXT);
             b.setBorder(new LineBorder(UiKit.BORDER, 1, true));
         }
@@ -830,9 +885,9 @@ public class ShadingColorPage extends JPanel {
 
     private void highlightButton(JButton b, boolean active) {
         if (active) {
-            b.setBackground(new Color(0xEEF2FF));
-            b.setForeground(new Color(0x1D4ED8));
-            b.setBorder(new LineBorder(new Color(0xC7D2FE), 1, true));
+            b.setBackground(UiKit.CHIP_ACTIVE_BG);
+            b.setForeground(UiKit.CHIP_ACTIVE_TEXT);
+            b.setBorder(new LineBorder(UiKit.isDarkBlueMode() ? new Color(0x3B82F6) : new Color(0xC7D2FE), 1, true));
         } else {
             b.setBackground(UiKit.WHITE);
             b.setForeground(UiKit.TEXT);
@@ -850,7 +905,7 @@ public class ShadingColorPage extends JPanel {
             b.setBackground(UiKit.PRIMARY);
             b.setForeground(Color.WHITE);
         } else {
-            b.setBackground(new Color(0xF3F4F6));
+            b.setBackground(UiKit.META_PILL_BG);
             b.setForeground(UiKit.TEXT);
         }
     }
@@ -954,7 +1009,7 @@ public class ShadingColorPage extends JPanel {
     private class PreviewPanel extends JPanel {
         PreviewPanel() {
             setOpaque(true);
-            setBackground(new Color(0xF3F4F6));
+            setBackground(UiKit.META_PILL_BG);
         }
 
         @Override
@@ -966,10 +1021,10 @@ public class ShadingColorPage extends JPanel {
             int w = getWidth();
             int h = getHeight();
 
-            g2.setColor(new Color(0xF3F4F6));
+            g2.setColor(UiKit.META_PILL_BG);
             g2.fillRect(0, 0, w, h);
 
-            g2.setColor(new Color(0xE5E7EB));
+            g2.setColor(UiKit.BORDER);
             g2.drawLine(0, 0, w, 0);
 
             int boxW = Math.min(520, Math.max(220, w - 120));
@@ -977,7 +1032,7 @@ public class ShadingColorPage extends JPanel {
             int x = (w - boxW) / 2;
             int y = (h - boxH) / 2;
 
-            Color base = afterMode ? selectedColor : new Color(0xE5E7EB);
+            Color base = afterMode ? selectedColor : UiKit.BORDER;
 
             float glossBoost = "Gloss".equals(material) ? 0.22f : ("Satin".equals(material) ? 0.12f : 0.06f);
 
@@ -993,7 +1048,7 @@ public class ShadingColorPage extends JPanel {
             g2.setColor(adjusted);
             g2.fillRoundRect(x, y, boxW, boxH, 22, 22);
 
-            g2.setColor(new Color(0xD1D5DB));
+            g2.setColor(UiKit.TOGGLE_OFF_BORDER);
             g2.drawRoundRect(x, y, boxW, boxH, 22, 22);
 
             g2.setColor(new Color(255, 255, 255, (int) (255 * glossBoost)));

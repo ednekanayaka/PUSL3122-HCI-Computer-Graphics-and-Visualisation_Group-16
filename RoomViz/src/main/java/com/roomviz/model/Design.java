@@ -47,7 +47,7 @@ public class Design {
         this.lastUpdatedEpochMs = now;
     }
 
-    /* ========================= Compatibility helpers (NEW) ========================= */
+    /* ========================= Compatibility helpers ========================= */
 
     public String getName() {
         return getDesignName();
@@ -58,7 +58,7 @@ public class Design {
     }
 
     /**
-     * ✅ FIXED:
+     * FIXED:
      * Make sure a new Design ALWAYS has a default RoomSpec,
      * otherwise the room border/highlight logic becomes inconsistent.
      */
@@ -67,7 +67,7 @@ public class Design {
         d.id = UUID.randomUUID().toString();
         d.designName = (designName == null || designName.isBlank()) ? "Untitled Design" : designName;
 
-        // ✅ default RoomSpec so room borders can always render
+        // default RoomSpec so room borders can always render
         // (Pick values that match your UI defaults)
         d.roomSpec = new RoomSpec(
                 12,               // width (units)
@@ -89,7 +89,7 @@ public class Design {
         this.lastUpdatedEpochMs = System.currentTimeMillis();
     }
 
-    /* ========================= Your existing getters/setters ========================= */
+    /* ========================= getters/setters ========================= */
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }

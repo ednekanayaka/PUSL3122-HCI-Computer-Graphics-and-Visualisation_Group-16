@@ -12,6 +12,7 @@ public class UserSettings {
 
     private String fontSize = "Small"; // Small|Medium|Large
     private boolean highContrast = false;
+    private String themeMode = "light"; // light|dark_blue
 
     // coursework demo only
     private String passwordPlain = "";
@@ -46,8 +47,19 @@ public class UserSettings {
     public boolean isHighContrast() { return highContrast; }
     public void setHighContrast(boolean highContrast) { this.highContrast = highContrast; }
 
+    public String getThemeMode() { return themeMode; }
+    public void setThemeMode(String themeMode) { this.themeMode = normalizeThemeMode(themeMode); }
+
     public String getPasswordPlain() { return passwordPlain; }
     public void setPasswordPlain(String passwordPlain) { this.passwordPlain = safe(passwordPlain); }
+
+    private static String normalizeThemeMode(String mode) {
+        String t = safe(mode).toLowerCase();
+        if ("dark_blue".equals(t) || "dark blue".equals(t) || "dark-blue".equals(t) || "dark".equals(t)) {
+            return "dark_blue";
+        }
+        return "light";
+    }
 
     private static String safe(String s) {
         return s == null ? "" : s.trim();

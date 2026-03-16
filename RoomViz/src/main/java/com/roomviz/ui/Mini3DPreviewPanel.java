@@ -651,7 +651,7 @@ public class Mini3DPreviewPanel extends JPanel {
         return new Color(r, g, b, c.getAlpha());
     }
 
-    // ✅ FIX: only use getters that exist in your Design class + handle null Integer
+    // FIX: only use getters that exist in your Design class + handle null Integer
     private double safeLayoutX(Design d, double fallback) {
         try {
             Integer v = d.getLayoutX();

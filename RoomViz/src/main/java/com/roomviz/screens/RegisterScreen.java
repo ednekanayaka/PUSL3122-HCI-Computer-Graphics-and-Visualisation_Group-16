@@ -8,6 +8,7 @@ import com.roomviz.data.SettingsRepository;
 import com.roomviz.data.UserRepository;
 import com.roomviz.model.User;
 import com.roomviz.model.UserSettings;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -20,32 +21,37 @@ import java.awt.geom.RoundRectangle2D;
 
 public class RegisterScreen extends JPanel {
 
+    // Fixed light-mode palette — Register page never changes with dark/light mode
+    private static final Color L_BG        = new Color(0xF6F7FB);
+    private static final Color L_WHITE     = Color.WHITE;
+    private static final Color L_TEXT      = new Color(0x111827);
+    private static final Color L_MUTED     = new Color(0x6B7280);
+    private static final Color L_BORDER    = new Color(0xE5E7EB);
+    private static final Color L_PRIMARY   = new Color(0x5B2BFF);
+    private static final Color L_PRIMARY_DARK = new Color(0x8E2DE2);
+
     private final JTextField nameField;
     private final JTextField emailField;
     private final JPasswordField passwordField;
     private final JPasswordField confirmPasswordField;
     private final JLabel errorLabel;
 
-    private final SettingsRepository settingsRepo;
-    private final UserRepository userRepo;
-    private final Session session;
+    // ✅ NEW: Role select
+    private final JRadioButton adminRadio;
+    private final JRadioButton customerRadio;
 
     public RegisterScreen(AppFrame frame, Router router, SettingsRepository settingsRepo,
                           UserRepository userRepo, Session session) {
-        this.settingsRepo = settingsRepo;
-        this.userRepo = userRepo;
-        this.session = session;
-
         setLayout(new BorderLayout());
-        setBackground(UiKit.BG);
+        setBackground(L_BG);
 
         // ===== Left + Right split =====
         JPanel left = new JPanel(new BorderLayout());
-        left.setBackground(UiKit.WHITE);
+        left.setBackground(L_WHITE);
 
         JPanel right = new GradientPanel(
-                new Color(0x5B2BFF),
-                new Color(0x8E2DE2)
+                heroGradientStart(),
+                heroGradientEnd()
         );
         right.setLayout(new GridBagLayout());
 
@@ -59,15 +65,29 @@ public class RegisterScreen extends JPanel {
         JPanel brandBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 18, 18));
         brandBar.setOpaque(false);
 
+        JLabel badge = new JLabel("RV", SwingConstants.CENTER);
+        badge.setOpaque(true);
+        badge.setBackground(L_PRIMARY);
+        badge.setForeground(Color.WHITE);
+        badge.setFont(UiKit.scaled(badge, Font.BOLD, 0.92f));
+        badge.setBorder(new EmptyBorder(6, 9, 6, 9));
+
         JLabel brand = new JLabel("RoomViz");
-        brand.setForeground(UiKit.TEXT);
+        brand.setForeground(L_TEXT);
         brand.setFont(UiKit.scaled(brand, Font.BOLD, 1.10f));
-        brandBar.add(brand);
 
         JLabel subtitle = new JLabel("Interior Design Studio");
-        subtitle.setForeground(UiKit.MUTED);
+        subtitle.setForeground(L_MUTED);
         subtitle.setFont(UiKit.scaled(subtitle, Font.PLAIN, 0.92f));
-        brandBar.add(subtitle);
+
+        JPanel brandText = new JPanel();
+        brandText.setOpaque(false);
+        brandText.setLayout(new BoxLayout(brandText, BoxLayout.Y_AXIS));
+        brandText.add(brand);
+        brandText.add(subtitle);
+
+        brandBar.add(badge);
+        brandBar.add(brandText);
 
         left.add(brandBar, BorderLayout.NORTH);
 
@@ -89,19 +109,18 @@ public class RegisterScreen extends JPanel {
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBorder(new EmptyBorder(26, 26, 26, 26));
 
-        // IMPORTANT: DO NOT force a fixed preferred height (it causes clipping)
         card.setMinimumSize(new Dimension(360, 0));
         card.setMaximumSize(new Dimension(420, Integer.MAX_VALUE));
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel h1 = new JLabel("Create your account");
         h1.setAlignmentX(Component.LEFT_ALIGNMENT);
-        h1.setForeground(UiKit.TEXT);
+        h1.setForeground(L_TEXT);
         h1.setFont(UiKit.scaled(h1, Font.BOLD, 1.35f));
 
         JLabel p = new JLabel("<html><div style='width:280px;'>Register once and your account is saved in the local RoomViz database.</div></html>");
         p.setAlignmentX(Component.LEFT_ALIGNMENT);
-        p.setForeground(UiKit.MUTED);
+        p.setForeground(L_MUTED);
         p.setFont(UiKit.scaled(p, Font.PLAIN, 0.92f));
 
         card.add(h1);
@@ -131,6 +150,33 @@ public class RegisterScreen extends JPanel {
         card.add(wrapField(emailField));
         card.add(Box.createVerticalStrut(14));
 
+        // ✅ NEW: Role selector
+        JLabel roleLbl = label("Register as");
+        card.add(roleLbl);
+        card.add(Box.createVerticalStrut(6));
+
+        adminRadio = new JRadioButton("Admin");
+        customerRadio = new JRadioButton("Customer");
+
+        ButtonGroup roleGroup = new ButtonGroup();
+        roleGroup.add(adminRadio);
+        roleGroup.add(customerRadio);
+
+        // Safer default: customer
+        customerRadio.setSelected(true);
+
+        styleRadio(adminRadio);
+        styleRadio(customerRadio);
+
+        JPanel roleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        roleRow.setOpaque(false);
+        roleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        roleRow.add(customerRadio);
+        roleRow.add(adminRadio);
+
+        card.add(roleRow);
+        card.add(Box.createVerticalStrut(14));
+
         // Password
         JLabel passLbl = label("Password");
         card.add(passLbl);
@@ -156,13 +202,13 @@ public class RegisterScreen extends JPanel {
         // Error label
         errorLabel = new JLabel(" ");
         errorLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        errorLabel.setForeground(UiKit.DANGER);
+        errorLabel.setForeground(new Color(0xEF4444));
         errorLabel.setFont(UiKit.scaled(errorLabel, Font.PLAIN, 0.92f));
         card.add(errorLabel);
         card.add(Box.createVerticalStrut(8));
 
         // Register button
-        JButton registerBtn = new JButton("Create account");
+        JButton registerBtn = UiKit.primaryButton("Create account");
         stylePrimaryButton(registerBtn);
         registerBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         registerBtn.addActionListener(e -> {
@@ -170,6 +216,9 @@ public class RegisterScreen extends JPanel {
             String email = emailField.getText().trim();
             String pw = new String(passwordField.getPassword()).trim();
             String cpw = new String(confirmPasswordField.getPassword()).trim();
+
+            // ✅ NEW: selected role
+            String selectedRole = customerRadio.isSelected() ? User.ROLE_CUSTOMER : User.ROLE_ADMIN;
 
             if (name.isEmpty() || name.equals("Sarah Johnson")) {
                 showError("Please enter your full name.");
@@ -195,19 +244,19 @@ public class RegisterScreen extends JPanel {
             try {
                 String emailLower = email.toLowerCase().trim();
 
-                // ✅ Check if email already exists
+                // Check if email already exists
                 if (userRepo.findByEmail(emailLower) != null) {
                     showError("An account with this email already exists.");
                     return;
                 }
 
-                // ✅ Create real DB user (password is hashed in repo)
-                User u = userRepo.createUser(name, emailLower, pw.toCharArray());
+                // ✅ Create DB user with selected role
+                User u = userRepo.createUser(name, emailLower, pw.toCharArray(), selectedRole);
 
-                // ✅ Login session immediately
+                // Login session immediately
                 session.login(u);
 
-                // ✅ Save only display info to settings (NOT password)
+                // Save only display info to settings (NOT password)
                 UserSettings s = (settingsRepo == null) ? null : settingsRepo.get();
                 if (s == null) s = UserSettings.defaults();
                 s.setFullName(u.getFullName());
@@ -218,7 +267,7 @@ public class RegisterScreen extends JPanel {
                 showError(" ");
                 JOptionPane.showMessageDialog(
                         this,
-                        "Account created successfully.\nYou are now logged in.",
+                        "Account created successfully.\nYou are now logged in as " + (u.isAdmin() ? "Admin" : "Customer") + ".",
                         "Registered",
                         JOptionPane.INFORMATION_MESSAGE
                 );
@@ -240,7 +289,7 @@ public class RegisterScreen extends JPanel {
         bottomRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel small = new JLabel("Already have an account? ");
-        small.setForeground(UiKit.MUTED);
+        small.setForeground(L_MUTED);
         small.setFont(UiKit.scaled(small, Font.PLAIN, 0.90f));
 
         JButton backToLogin = linkButton("Log in");
@@ -268,8 +317,8 @@ public class RegisterScreen extends JPanel {
         rightContent.setLayout(new BoxLayout(rightContent, BoxLayout.Y_AXIS));
         rightContent.setBorder(new EmptyBorder(60, 60, 60, 60));
 
-        JLabel icon = new JLabel("\uD83D\uDD8C");
-        icon.setFont(UiKit.scaled(icon, Font.PLAIN, 1.65f));
+        JLabel icon = new JLabel(FontAwesome.PAINT_BRUSH);
+        icon.setFont(FontAwesome.solid(36f));
         icon.setForeground(Color.WHITE);
 
         JLabel title = new JLabel("<html>Start building your<br/>room designs</html>");
@@ -299,13 +348,21 @@ public class RegisterScreen extends JPanel {
     // ===== helpers =====
 
     private boolean isHighContrast() {
-        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+        return false; // Register page always uses light mode style
+    }
+
+    private Color heroGradientStart() {
+        return new Color(0x5B2BFF);
+    }
+
+    private Color heroGradientEnd() {
+        return new Color(0x8E2DE2);
     }
 
     private JLabel label(String text) {
         JLabel l = new JLabel(text);
         l.setAlignmentX(Component.LEFT_ALIGNMENT);
-        l.setForeground(UiKit.TEXT);
+        l.setForeground(L_TEXT);
         l.setFont(UiKit.scaled(l, Font.PLAIN, 0.92f));
         return l;
     }
@@ -323,7 +380,7 @@ public class RegisterScreen extends JPanel {
         b.setBorderPainted(false);
         b.setContentAreaFilled(false);
         b.setFocusPainted(false);
-        b.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x6D28D9));
+        b.setForeground(L_PRIMARY_DARK);
         b.setFont(UiKit.scaled(b, Font.PLAIN, 0.92f));
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
@@ -333,9 +390,9 @@ public class RegisterScreen extends JPanel {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         p.setOpaque(false);
 
-        JLabel dot = new JLabel("✓");
+        JLabel dot = new JLabel(FontAwesome.CHECK);
         dot.setForeground(Color.WHITE);
-        dot.setFont(UiKit.scaled(dot, Font.BOLD, 1.05f));
+        dot.setFont(FontAwesome.solid(13f));
 
         JLabel t = new JLabel(text);
         t.setForeground(new Color(255, 255, 255, 220));
@@ -349,17 +406,29 @@ public class RegisterScreen extends JPanel {
     private void styleTextField(JTextComponent field) {
         field.setFont(UiKit.scaled((JComponent) field, Font.PLAIN, 1.00f));
         field.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UiKit.BORDER, 1, true),
+                BorderFactory.createLineBorder(L_BORDER, 1, true),
                 new EmptyBorder(10, 12, 10, 12)
         ));
-        field.setBackground(UiKit.WHITE);
-        field.setForeground(UiKit.TEXT);
+        field.setBackground(L_WHITE);
+        field.setForeground(L_TEXT);
         field.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        field.setCaretColor(UiKit.TEXT);
+        field.setCaretColor(L_TEXT);
+    }
+
+    // ✅ NEW: match radio to theme (no layout change)
+    private void styleRadio(JRadioButton r) {
+        r.setOpaque(false);
+        r.setForeground(L_TEXT);
+        r.setFocusPainted(false);
+        r.setFont(UiKit.scaled(r, Font.PLAIN, 0.92f));
+        r.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
     private void stylePrimaryButton(JButton b) {
-        b.setBackground(isHighContrast() ? UiKit.TEXT : new Color(0x6D28D9));
+        b.setBackground(isHighContrast() ? L_TEXT : L_PRIMARY);
+        if (b instanceof UiKit.RoundButton rb && !isHighContrast()) {
+            rb.setGradient(L_PRIMARY, L_PRIMARY_DARK);
+        }
         b.setForeground(Color.WHITE);
         b.setFocusPainted(false);
         b.setBorder(new EmptyBorder(12, 14, 12, 14));
@@ -373,7 +442,7 @@ public class RegisterScreen extends JPanel {
     }
 
     private Color placeholderColor() {
-        return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
+        return new Color(0x9CA3AF);
     }
 
     private void setPlaceholder(JTextComponent field, String placeholder) {
@@ -386,7 +455,7 @@ public class RegisterScreen extends JPanel {
                 String t = field.getText();
                 if (t != null && t.equals(placeholder)) {
                     field.setText("");
-                    field.setForeground(UiKit.TEXT);
+                    field.setForeground(L_TEXT);
                 }
             }
 
@@ -416,10 +485,10 @@ public class RegisterScreen extends JPanel {
             g2.setColor(new Color(0, 0, 0, 18));
             g2.fill(new RoundRectangle2D.Float(3, 4, getWidth() - 6, getHeight() - 6, arc, arc));
 
-            g2.setColor(UiKit.WHITE);
+            g2.setColor(L_WHITE);
             g2.fill(r);
 
-            g2.setColor(UiKit.BORDER);
+            g2.setColor(L_BORDER);
             g2.draw(r);
 
             g2.dispose();

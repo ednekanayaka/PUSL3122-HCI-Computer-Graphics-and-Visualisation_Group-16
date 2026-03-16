@@ -4,9 +4,12 @@ import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
+import com.roomviz.data.Session;
 import com.roomviz.model.Design;
 import com.roomviz.model.RoomSpec;
+import com.roomviz.model.User;
 import com.roomviz.ui.Mini2DPreviewPanel;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -31,12 +34,13 @@ public class DesignLibraryPage extends JPanel {
 
     private final Router router;
     private final AppState appState;
+    private final Session session;
 
     // dynamic UI refs
     private JLabel showingLabel;
     private JPanel gridHost; // holds either empty state or grid panel
 
-    // ✅ NEW: filter/sort/view controls (wired)
+    // filter/sort/view controls (wired)
     private JTextField searchField;
     private JComboBox<String> shapesBox;
     private JComboBox<String> sizeBox;
@@ -47,20 +51,22 @@ public class DesignLibraryPage extends JPanel {
     private JButton listBtn;
     private boolean gridMode = true;
 
-    // ✅ Track filter state to avoid redundant/destructive refreshes
+    // Track filter state to avoid redundant/destructive refreshes
     private String lastAppliedFilterState = "";
 
-    private static final String SEARCH_PLACEHOLDER = "Search designs by name, customer, or tags...";
+    private static final String SEARCH_PLACEHOLDER_ADMIN = "Search designs by name, customer, or tags...";
+    private static final String SEARCH_PLACEHOLDER_CUSTOMER = "Search designs by name...";
 
-    // ✅ keep existing constructor (fallback)
+    // keep existing constructor (fallback)
     public DesignLibraryPage(AppFrame frame, Router router) {
-        this(frame, router, null);
+        this(frame, router, null, null);
     }
 
-    // ✅ new constructor used by ShellScreen
-    public DesignLibraryPage(AppFrame frame, Router router, AppState appState) {
+    // constructor used by ShellScreen (updated)
+    public DesignLibraryPage(AppFrame frame, Router router, AppState appState, Session session) {
         this.router = router;
         this.appState = appState;
+        this.session = session;
 
         setLayout(new BorderLayout());
         setOpaque(false);
@@ -123,7 +129,7 @@ public class DesignLibraryPage extends JPanel {
 
         add(scroller, BorderLayout.CENTER);
 
-        // ✅ IMPORTANT: Refresh when this screen is shown (fixes sync issue if items were deleted elsewhere)
+        // Refresh when this screen is shown
         router.addListener(key -> {
             if (ScreenKeys.DESIGN_LIBRARY.equals(key)) {
                 refreshGrid(frame);
@@ -133,13 +139,20 @@ public class DesignLibraryPage extends JPanel {
         refreshGrid(frame);
     }
 
+    private boolean isCustomer() {
+        if (session == null) return false;
+        User u = session.getCurrentUser();
+        if (u == null) return false;
+        return u.isCustomer();
+    }
+
     private boolean isHighContrast() {
-        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+        return UiKit.isHighContrastMode();
     }
 
     private Color softMuted() {
         // neutral muted used in a few places (placeholder/meta)
-        return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
+        return isHighContrast() ? UiKit.TEXT : UiKit.MUTED;
     }
 
     private JComponent headerRow() {
@@ -152,27 +165,39 @@ public class DesignLibraryPage extends JPanel {
         h1.setFont(UiKit.scaled(h1, Font.BOLD, 1.85f));
         h1.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel sub = new JLabel("Manage and organize your saved room designs", SwingConstants.CENTER);
+        JLabel sub = new JLabel(
+                isCustomer()
+                        ? "View your saved room designs"
+                        : "Manage and organize your saved room designs",
+                SwingConstants.CENTER
+        );
         sub.setForeground(UiKit.MUTED);
         sub.setFont(UiKit.scaled(sub, Font.PLAIN, 1.05f));
         sub.setBorder(new EmptyBorder(8, 0, 0, 0));
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JButton cta = UiKit.primaryButton("+   Create New Design");
-        cta.setFont(UiKit.scaled(cta, Font.BOLD, 1.00f));
-        cta.setPreferredSize(new Dimension(220, 42)); // Fixed size for better look
-        cta.setMaximumSize(new Dimension(220, 42));
-        cta.setAlignmentX(Component.CENTER_ALIGNMENT);
-        cta.addActionListener(e -> this.router.show(ScreenKeys.NEW_DESIGN));
-
         p.add(h1);
         p.add(sub);
-        p.add(vSpace(22));
-        p.add(cta);
+
+        // Create New Design is ADMIN-ONLY
+        if (!isCustomer()) {
+            JButton cta = UiKit.primaryButton("+   Create New Design");
+            cta.setFont(UiKit.scaled(cta, Font.BOLD, 1.00f));
+            cta.setPreferredSize(new Dimension(220, 42));
+            cta.setMaximumSize(new Dimension(220, 42));
+            cta.setAlignmentX(Component.CENTER_ALIGNMENT);
+            cta.addActionListener(e -> this.router.show(ScreenKeys.NEW_DESIGN));
+
+            p.add(vSpace(22));
+            p.add(cta);
+        } else {
+            p.add(vSpace(22));
+        }
+
         return p;
     }
 
-    // ✅ UPDATED: accept frame and wire listeners
+    // accept frame and wire listeners
     private JComponent searchFilterCard(AppFrame frame) {
         UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
         card.setOpaque(false);
@@ -181,7 +206,8 @@ public class DesignLibraryPage extends JPanel {
         card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
         gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(0, 0, 16, 0);
@@ -190,10 +216,11 @@ public class DesignLibraryPage extends JPanel {
         JPanel searchRow = new JPanel(new BorderLayout(14, 0));
         searchRow.setOpaque(false);
 
-        UiKit.SearchResult sr = UiKit.searchFieldWithIcon(SEARCH_PLACEHOLDER);
+        String placeholder = isCustomer() ? SEARCH_PLACEHOLDER_CUSTOMER : SEARCH_PLACEHOLDER_ADMIN;
+        UiKit.SearchResult sr = UiKit.searchFieldWithIcon(placeholder);
         searchField = sr.field;
         sr.panel.setPreferredSize(new Dimension(300, 42));
-        
+
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e) { refreshGrid(frame); }
             @Override public void removeUpdate(DocumentEvent e) { refreshGrid(frame); }
@@ -206,7 +233,7 @@ public class DesignLibraryPage extends JPanel {
         // Filters Section (Responsive Flow)
         gbc.gridy = 1;
         gbc.insets = new Insets(0, 0, 0, 0);
-        
+
         JPanel filtersRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 10));
         filtersRow.setOpaque(false);
 
@@ -216,7 +243,7 @@ public class DesignLibraryPage extends JPanel {
 
         shapesBox = new JComboBox<>(new String[]{"All Shapes", "Rectangular", "Square", "L-Shape"});
         UiKit.styleDropdown(shapesBox);
-        shapesBox.setPreferredSize(new Dimension(140, 36)); // Balanced size
+        shapesBox.setPreferredSize(new Dimension(140, 36));
         shapesBox.addActionListener(e -> refreshGrid(frame));
 
         JLabel sizeLbl = new JLabel("Size:");
@@ -225,7 +252,7 @@ public class DesignLibraryPage extends JPanel {
 
         sizeBox = new JComboBox<>(new String[]{"All Sizes", "Small", "Medium", "Large"});
         UiKit.styleDropdown(sizeBox);
-        sizeBox.setPreferredSize(new Dimension(120, 36)); // Balanced size
+        sizeBox.setPreferredSize(new Dimension(120, 36));
         sizeBox.addActionListener(e -> refreshGrid(frame));
 
         JButton resetBtn = UiKit.ghostButton("Reset All");
@@ -249,7 +276,7 @@ public class DesignLibraryPage extends JPanel {
         return card;
     }
 
-    // ✅ UPDATED: accept frame and wire sort + view toggle + clear filters
+    // accept frame and wire sort + view toggle + clear filters
     private JComponent metaRow(AppFrame frame) {
         JPanel row = new JPanel(new GridBagLayout());
         row.setOpaque(false);
@@ -291,8 +318,8 @@ public class DesignLibraryPage extends JPanel {
         UiKit.styleDropdown(sortBox);
         sortBox.addActionListener(e -> refreshGrid(frame));
 
-        gridBtn = UiKit.iconButton("▦");
-        listBtn = UiKit.iconButton("≡");
+        gridBtn = UiKit.iconButton(FontAwesome.TH_LARGE);
+        listBtn = UiKit.iconButton(FontAwesome.BARS);
 
         gridBtn.setToolTipText("Grid view");
         listBtn.setToolTipText("List view");
@@ -333,7 +360,7 @@ public class DesignLibraryPage extends JPanel {
         if (appState == null) {
             gridHost.removeAll();
             gridHost.add(emptyState("AppState not wired",
-                    "Please use the 3-argument constructor in ShellScreen."), BorderLayout.CENTER);
+                    "Please use the constructor in ShellScreen."), BorderLayout.CENTER);
             if (showingLabel != null) showingLabel.setText("Showing 0 designs    ");
             revalidate();
             repaint();
@@ -342,10 +369,11 @@ public class DesignLibraryPage extends JPanel {
 
         List<Design> designs = appState.getRepo().getAllSortedByLastUpdatedDesc();
 
-        // ✅ Optimization: Check if filters OR underlying data actually changed before rebuilding.
+        // Optimization: Check if filters OR underlying data actually changed before rebuilding.
         String q = (searchField == null) ? "" : searchField.getText();
-        // Robust placeholder check
-        if (q != null && (q.trim().equalsIgnoreCase(SEARCH_PLACEHOLDER) || q.trim().isEmpty())) {
+        String placeholder = isCustomer() ? SEARCH_PLACEHOLDER_CUSTOMER : SEARCH_PLACEHOLDER_ADMIN;
+
+        if (q != null && (q.trim().equalsIgnoreCase(placeholder) || q.trim().isEmpty())) {
             q = "";
         }
         q = q.trim();
@@ -386,11 +414,10 @@ public class DesignLibraryPage extends JPanel {
 
     private List<Design> applyFilters(List<Design> designs) {
         String q = (searchField == null) ? "" : searchField.getText();
-        if (SEARCH_PLACEHOLDER.equalsIgnoreCase(q)) {
-            q = "";
-        }
+        String placeholder = isCustomer() ? SEARCH_PLACEHOLDER_CUSTOMER : SEARCH_PLACEHOLDER_ADMIN;
+        if (placeholder.equalsIgnoreCase(q)) q = "";
         q = safe(q, "").toLowerCase(Locale.ENGLISH);
-        
+
         String shapeFilter = (shapesBox == null) ? "All Shapes" : (String) shapesBox.getSelectedItem();
         String sizeFilter = (sizeBox == null) ? "All Sizes" : (String) sizeBox.getSelectedItem();
 
@@ -400,7 +427,7 @@ public class DesignLibraryPage extends JPanel {
         for (Design d : designs) {
             if (d == null) continue;
 
-            // search (name + customer + tags if present)
+            // search (name + customer for admin)
             if (!q.isEmpty()) {
                 String hay = buildSearchHaystack(d);
                 if (!hay.contains(q)) continue;
@@ -448,8 +475,11 @@ public class DesignLibraryPage extends JPanel {
     private String buildSearchHaystack(Design d) {
         StringBuilder sb = new StringBuilder();
         sb.append(safe(d.getDesignName(), "")).append(" ");
-        sb.append(safe(d.getCustomerName(), "")).append(" ");
 
+        // admin can search by customer; customer doesn't need it
+        if (!isCustomer()) {
+            sb.append(safe(d.getCustomerName(), "")).append(" ");
+        }
 
         return sb.toString().toLowerCase(Locale.ENGLISH);
     }
@@ -536,7 +566,7 @@ public class DesignLibraryPage extends JPanel {
 
         for (Design d : designs) {
             String title = safe(d.getDesignName(), "Untitled Design");
-            String client = safe(d.getCustomerName(), "Unknown Client");
+            String client = safe(d.getCustomerName(), ""); // customer might not need it
 
             RoomSpec spec = d.getRoomSpec();
             String size = (spec == null) ? "-" : spec.toSizeLabel();
@@ -547,14 +577,14 @@ public class DesignLibraryPage extends JPanel {
         return grid;
     }
 
-    // ✅ NEW: list view (same cards, 1 per row)
+    // list view (same cards, 1 per row)
     private JComponent list(AppFrame frame, List<Design> designs) {
         JPanel list = new JPanel(new GridLayout(0, 1, GRID_GAP, GRID_GAP));
         list.setOpaque(false);
 
         for (Design d : designs) {
             String title = safe(d.getDesignName(), "Untitled Design");
-            String client = safe(d.getCustomerName(), "Unknown Client");
+            String client = safe(d.getCustomerName(), "");
 
             RoomSpec spec = d.getRoomSpec();
             String size = (spec == null) ? "-" : spec.toSizeLabel();
@@ -590,11 +620,12 @@ public class DesignLibraryPage extends JPanel {
         t.setFont(UiKit.scaled(t, Font.BOLD, 1.15f));
         t.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel sub = new JLabel(client);
+        JLabel sub = new JLabel(isCustomer() ? "" : safe(client, "Unknown Client"));
         sub.setForeground(UiKit.MUTED);
         sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
         sub.setBorder(new EmptyBorder(4, 0, 0, 0));
         sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sub.setVisible(!isCustomer());
 
         JLabel meta = new JLabel(size + "   •   " + timeAgo);
         meta.setForeground(softMuted());
@@ -603,65 +634,87 @@ public class DesignLibraryPage extends JPanel {
         meta.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         info.add(t);
-        info.add(sub);
+        if (!isCustomer()) info.add(sub);
         info.add(meta);
 
-        // Actions Area (Open + Icons)
+        // Actions Area
         JPanel actionsRow = new JPanel(new BorderLayout(12, 0));
         actionsRow.setOpaque(false);
         actionsRow.setBorder(new EmptyBorder(4, 0, 0, 0));
 
-        JButton open = UiKit.primaryButton("Open Design");
-        open.setMargin(new Insets(6, 16, 6, 16));
-        open.setFont(UiKit.scaled(open, Font.BOLD, 0.95f));
-        open.addActionListener(e -> openDesign(design));
+        if (isCustomer()) {
+            JButton open2d = UiKit.primaryButton("Open 2D");
+            open2d.setToolTipText("Open in 2D View (read-only)");
+            open2d.setMargin(new Insets(6, 16, 6, 16));
+            open2d.setFont(UiKit.scaled(open2d, Font.BOLD, 0.95f));
+            open2d.addActionListener(e -> openDesign2D(design));
 
-        JPanel iconRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        iconRow.setOpaque(false);
+            JButton open3d = UiKit.ghostButton("View 3D");
+            open3d.setToolTipText("Open in 3D View");
+            open3d.setMargin(new Insets(6, 14, 6, 14));
+            open3d.setFont(UiKit.scaled(open3d, Font.BOLD, 0.90f));
+            open3d.addActionListener(e -> openDesign3D(design));
 
-        JButton duplicate = UiKit.iconButton("⧉");
-        duplicate.setToolTipText("Duplicate");
-        duplicate.addActionListener(e -> {
-            appState.getRepo().duplicate(design.getId());
-            refreshGrid(frame);
-        });
+            JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+            row.setOpaque(false);
+            row.add(open2d);
+            row.add(open3d);
 
-        JButton edit = UiKit.ghostButton("Edit");
-        edit.setToolTipText("Edit design info");
-        edit.setFont(UiKit.scaled(edit, Font.BOLD, 0.88f));
-        edit.addActionListener(e -> {
-            if (appState != null) {
-                appState.setCurrentDesignId(design.getId());
-                router.show(ScreenKeys.DESIGN_DETAILS);
-            }
-        });
+            actionsRow.add(row, BorderLayout.WEST);
+        } else {
+            JButton open = UiKit.primaryButton("Open");
+            open.setToolTipText("Open in 2D Planner");
+            open.setMargin(new Insets(6, 16, 6, 16));
+            open.setFont(UiKit.scaled(open, Font.BOLD, 0.95f));
+            open.addActionListener(e -> openDesign2D(design));
 
-        JButton delete = UiKit.ghostButton("Delete");
-        delete.setToolTipText("Delete");
-        delete.setForeground(UiKit.DANGER);
-        delete.setFont(UiKit.scaled(delete, Font.BOLD, 0.88f));
-        delete.addActionListener(e -> {
-            int ok = JOptionPane.showConfirmDialog(
-                    this,
-                    "Delete \"" + title + "\"?\nThis cannot be undone.",
-                    "Confirm delete",
-                    JOptionPane.YES_NO_OPTION
-            );
-            if (ok == JOptionPane.YES_OPTION) {
-                appState.getRepo().delete(design.getId());
-                if (design.getId().equals(appState.getCurrentDesignId())) {
-                    appState.setCurrentDesignId(null);
-                }
+            JPanel iconRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+            iconRow.setOpaque(false);
+
+            JButton duplicate = UiKit.iconButton(FontAwesome.CLONE);
+            duplicate.setToolTipText("Duplicate");
+            duplicate.addActionListener(e -> {
+                appState.getRepo().duplicate(design.getId());
                 refreshGrid(frame);
-            }
-        });
+            });
 
-        iconRow.add(duplicate);
-        iconRow.add(edit);
-        iconRow.add(delete);
+            JButton edit = UiKit.ghostButton("Edit");
+            edit.setToolTipText("Edit design info");
+            edit.setFont(UiKit.scaled(edit, Font.BOLD, 0.88f));
+            edit.addActionListener(e -> {
+                if (appState != null) {
+                    appState.setCurrentDesignId(design.getId());
+                    router.show(ScreenKeys.DESIGN_DETAILS);
+                }
+            });
 
-        actionsRow.add(open, BorderLayout.CENTER);
-        actionsRow.add(iconRow, BorderLayout.EAST);
+            JButton delete = UiKit.ghostButton("Delete");
+            delete.setToolTipText("Delete");
+            delete.setForeground(UiKit.DANGER);
+            delete.setFont(UiKit.scaled(delete, Font.BOLD, 0.88f));
+            delete.addActionListener(e -> {
+                int ok = JOptionPane.showConfirmDialog(
+                        this,
+                        "Delete \"" + title + "\"?\nThis cannot be undone.",
+                        "Confirm delete",
+                        JOptionPane.YES_NO_OPTION
+                );
+                if (ok == JOptionPane.YES_OPTION) {
+                    appState.getRepo().delete(design.getId());
+                    if (design.getId().equals(appState.getCurrentDesignId())) {
+                        appState.setCurrentDesignId(null);
+                    }
+                    refreshGrid(frame);
+                }
+            });
+
+            iconRow.add(duplicate);
+            iconRow.add(edit);
+            iconRow.add(delete);
+
+            actionsRow.add(open, BorderLayout.CENTER);
+            actionsRow.add(iconRow, BorderLayout.EAST);
+        }
 
         JPanel main = new JPanel();
         main.setOpaque(false);
@@ -672,11 +725,11 @@ public class DesignLibraryPage extends JPanel {
         card.add(main, BorderLayout.CENTER);
         card.add(actionsRow, BorderLayout.SOUTH);
 
-        // Hover Effect
+        // Hover Effect + double click open 2D
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) {
-                card.setFill(new Color(0xFBFCFF)); // Subtle highlight
-                card.setBorderPaint(UiKit.PRIMARY); // Border accent
+                card.setFill(UiKit.CARD_HOVER);
+                card.setBorderPaint(UiKit.PRIMARY);
                 card.repaint();
             }
             @Override public void mouseExited(MouseEvent e) {
@@ -685,17 +738,23 @@ public class DesignLibraryPage extends JPanel {
                 card.repaint();
             }
             @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) openDesign(design);
+                if (e.getClickCount() == 2) openDesign2D(design);
             }
         });
 
         return card;
     }
 
-    private void openDesign(Design d) {
+    private void openDesign2D(Design d) {
         if (appState == null || d == null) return;
         appState.setCurrentDesignId(d.getId());
         router.show(ScreenKeys.PLANNER_2D);
+    }
+
+    private void openDesign3D(Design d) {
+        if (appState == null || d == null) return;
+        appState.setCurrentDesignId(d.getId());
+        router.show(ScreenKeys.VIEW_3D);
     }
 
     /* ========================= helpers ========================= */
@@ -725,8 +784,7 @@ public class DesignLibraryPage extends JPanel {
         }
     }
 
-
-    // -------- reflection helpers (safe + compile-proof) --------
+    // -------- reflection helpers --------
 
     private static Object invoke(Object target, String methodName) {
         if (target == null || methodName == null) return null;
@@ -751,6 +809,7 @@ public class DesignLibraryPage extends JPanel {
         }
         return null;
     }
+
     private static Component vSpace(int px) {
         return Box.createRigidArea(new Dimension(0, px));
     }

@@ -3,10 +3,9 @@ package com.roomviz.data;
 import com.roomviz.model.User;
 import com.roomviz.security.PasswordUtil;
 
-import java.io.File;
 import java.sql.*;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UserRepository {
 
@@ -17,70 +16,37 @@ public class UserRepository {
         init();
     }
 
+    /**
+     * DB must live in the PROJECT folder.
+     * Uses DbBootstrap to resolve the path.
+     */
     public static UserRepository createDefault() {
-        File dir = new File(System.getProperty("user.home"), ".roomviz");
-        if (!dir.exists()) dir.mkdirs();
-        File db = new File(dir, "roomviz.db");
-        return new UserRepository("jdbc:sqlite:" + db.getAbsolutePath());
+        String url = DbBootstrap.jdbcUrl();
+        return new UserRepository(url);
     }
 
+    /**
+     * Schema must live ONLY in roomviz.sql (project folder).
+     * No CREATE TABLE statements in Java.
+     */
     private void init() {
-        String sql = """
-            CREATE TABLE IF NOT EXISTS users (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              full_name TEXT NOT NULL,
-              email TEXT NOT NULL UNIQUE,
-              password_hash TEXT NOT NULL,
-              job_title TEXT DEFAULT '',
-              department TEXT DEFAULT ''
-            );
-        """;
-        try (Connection c = DriverManager.getConnection(jdbcUrl);
-             Statement st = c.createStatement()) {
-
-            st.execute(sql);
-
-            // ✅ Migration for existing DBs (add missing columns)
-            ensureColumnExists(c, "users", "job_title", "TEXT", "''");
-            ensureColumnExists(c, "users", "department", "TEXT", "''");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void ensureColumnExists(Connection c, String table, String col, String type, String defVal) {
-        try {
-            Set<String> cols = new HashSet<>();
-            try (Statement st = c.createStatement();
-                 ResultSet rs = st.executeQuery("PRAGMA table_info(" + table + ")")) {
-                while (rs.next()) cols.add(rs.getString("name"));
-            }
-            if (!cols.contains(col)) {
-                try (Statement st = c.createStatement()) {
-                    st.execute("ALTER TABLE " + table + " ADD COLUMN " + col + " " + type + " DEFAULT " + defVal);
-                }
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
+        DbBootstrap.ensureSchema(jdbcUrl);
     }
 
     public User findByEmail(String emailLower) {
-        String sql = "SELECT id, full_name, email, password_hash, job_title, department FROM users WHERE lower(email)=?";
+        String sql = """
+            SELECT id, full_name, email, password_hash, job_title, department, role
+            FROM users
+            WHERE lower(email)=?
+        """;
         try (Connection c = DriverManager.getConnection(jdbcUrl);
              PreparedStatement ps = c.prepareStatement(sql)) {
+
             ps.setString(1, emailLower);
+
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
-                return new User(
-                        rs.getInt("id"),
-                        rs.getString("full_name"),
-                        rs.getString("email"),
-                        rs.getString("password_hash"),
-                        safe(rs.getString("job_title")),
-                        safe(rs.getString("department"))
-                );
+                return mapUser(rs);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -89,20 +55,19 @@ public class UserRepository {
     }
 
     public User findById(int id) {
-        String sql = "SELECT id, full_name, email, password_hash, job_title, department FROM users WHERE id=?";
+        String sql = """
+            SELECT id, full_name, email, password_hash, job_title, department, role
+            FROM users
+            WHERE id=?
+        """;
         try (Connection c = DriverManager.getConnection(jdbcUrl);
              PreparedStatement ps = c.prepareStatement(sql)) {
+
             ps.setInt(1, id);
+
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
-                return new User(
-                        rs.getInt("id"),
-                        rs.getString("full_name"),
-                        rs.getString("email"),
-                        rs.getString("password_hash"),
-                        safe(rs.getString("job_title")),
-                        safe(rs.getString("department"))
-                );
+                return mapUser(rs);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -110,11 +75,68 @@ public class UserRepository {
         }
     }
 
+    public User findByEmailExact(String emailLower) {
+        return findByEmail(emailLower);
+    }
+
+    // list users (for admin management page later)
+    public List<User> listAllUsers() {
+        String sql = """
+            SELECT id, full_name, email, password_hash, job_title, department, role
+            FROM users
+            ORDER BY role ASC, full_name ASC
+        """;
+        List<User> out = new ArrayList<>();
+        try (Connection c = DriverManager.getConnection(jdbcUrl);
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) out.add(mapUser(rs));
+            return out;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return out;
+        }
+    }
+
+    public List<User> listUsersByRole(String role) {
+        String sql = """
+            SELECT id, full_name, email, password_hash, job_title, department, role
+            FROM users
+            WHERE upper(role)=upper(?)
+            ORDER BY full_name ASC
+        """;
+        List<User> out = new ArrayList<>();
+        try (Connection c = DriverManager.getConnection(jdbcUrl);
+             PreparedStatement ps = c.prepareStatement(sql)) {
+
+            ps.setString(1, safe(role));
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(mapUser(rs));
+            }
+            return out;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return out;
+        }
+    }
+
+    /**
+     * Keep old behavior = creates ADMIN (so your current app keeps working until Step 2 UI is added).
+     */
     public User createUser(String fullName, String email, char[] password) throws SQLException {
+        return createUser(fullName, email, password, User.ROLE_ADMIN);
+    }
+
+    /**
+     * Create user with a role (ADMIN or CUSTOMER).
+     */
+    public User createUser(String fullName, String email, char[] password, String role) throws SQLException {
         String emailLower = email.trim().toLowerCase();
         String hash = PasswordUtil.hash(password);
 
-        String sql = "INSERT INTO users(full_name, email, password_hash, job_title, department) VALUES(?,?,?,?,?)";
+        String sql = "INSERT INTO users(full_name, email, password_hash, job_title, department, role) VALUES(?,?,?,?,?,?)";
         try (Connection c = DriverManager.getConnection(jdbcUrl);
              PreparedStatement ps = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
@@ -123,11 +145,21 @@ public class UserRepository {
             ps.setString(3, hash);
             ps.setString(4, ""); // job_title initially blank
             ps.setString(5, ""); // department initially blank
+
+            String normalizedRole = (role == null || role.trim().isEmpty())
+                    ? User.ROLE_ADMIN
+                    : role.trim().toUpperCase();
+
+            if (!User.ROLE_ADMIN.equals(normalizedRole) && !User.ROLE_CUSTOMER.equals(normalizedRole)) {
+                normalizedRole = User.ROLE_ADMIN;
+            }
+
+            ps.setString(6, normalizedRole);
             ps.executeUpdate();
 
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 int id = keys.next() ? keys.getInt(1) : -1;
-                return new User(id, safe(fullName), emailLower, hash, "", "");
+                return new User(id, safe(fullName), emailLower, hash, "", "", normalizedRole);
             }
         }
     }
@@ -142,6 +174,7 @@ public class UserRepository {
         String sql = "UPDATE users SET full_name=?, job_title=?, department=? WHERE id=?";
         try (Connection c = DriverManager.getConnection(jdbcUrl);
              PreparedStatement ps = c.prepareStatement(sql)) {
+
             ps.setString(1, safe(fullName));
             ps.setString(2, safe(jobTitle));
             ps.setString(3, safe(department));
@@ -154,7 +187,9 @@ public class UserRepository {
         String sql = "SELECT password_hash FROM users WHERE id=?";
         try (Connection c = DriverManager.getConnection(jdbcUrl);
              PreparedStatement ps = c.prepareStatement(sql)) {
+
             ps.setInt(1, userId);
+
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return false;
                 String hash = rs.getString("password_hash");
@@ -171,10 +206,36 @@ public class UserRepository {
         String sql = "UPDATE users SET password_hash=? WHERE id=?";
         try (Connection c = DriverManager.getConnection(jdbcUrl);
              PreparedStatement ps = c.prepareStatement(sql)) {
+
             ps.setString(1, newHash);
             ps.setInt(2, userId);
             ps.executeUpdate();
         }
+    }
+
+    /**
+     * Permanently delete the user record from SQLite.
+     */
+    public void deleteUserById(int userId) throws SQLException {
+        String sql = "DELETE FROM users WHERE id=?";
+        try (Connection c = DriverManager.getConnection(jdbcUrl);
+             PreparedStatement ps = c.prepareStatement(sql)) {
+
+            ps.setInt(1, userId);
+            ps.executeUpdate();
+        }
+    }
+
+    private User mapUser(ResultSet rs) throws SQLException {
+        return new User(
+                rs.getInt("id"),
+                rs.getString("full_name"),
+                rs.getString("email"),
+                rs.getString("password_hash"),
+                safe(rs.getString("job_title")),
+                safe(rs.getString("department")),
+                safe(rs.getString("role"))
+        );
     }
 
     private static String safe(String s) {

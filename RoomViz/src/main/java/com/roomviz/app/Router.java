@@ -15,7 +15,7 @@ public class Router {
 
     private final List<Consumer<String>> listeners = new ArrayList<>();
 
-    // ✅ Keep track of screens so we can replace them safely
+    // Keep track of screens so we can replace them safely
     private final Map<String, JComponent> screensByKey = new HashMap<>();
 
     public JPanel root() {
@@ -24,7 +24,7 @@ public class Router {
 
     /**
      * Add a screen by key.
-     * ✅ If the key already exists, replace the old screen in the CardLayout.
+     * If the key already exists, replace the old screen in the CardLayout.
      */
     public void add(String key, JComponent screen) {
         if (key == null || screen == null) return;

@@ -1,8 +1,10 @@
 package com.roomviz.screens;
 
-import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
+import com.roomviz.data.Session;
+import com.roomviz.model.User;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -17,60 +19,84 @@ import java.util.function.Consumer;
 public class Sidebar extends JPanel {
 
     private final Consumer<String> onTitleChange;
-
     private final Map<String, NavButton> buttonMap = new LinkedHashMap<>();
     private NavButton activeBtn;
 
-    public Sidebar(AppFrame frame, Router router, Consumer<String> onTitleChange) {
+    // Role context (null-safe)
+    private final Session session;
+
+    /**
+     * Backward-compatible constructor (if older code calls Sidebar(router, onTitleChange)).
+     * If session is not provided, we assume ADMIN to avoid accidentally hiding tools.
+     */
+    public Sidebar(Router router, Consumer<String> onTitleChange) {
+        this(router, onTitleChange, null);
+    }
+
+    /**
+     * - CUSTOMER: Design Library, 2D View (read-only), 3D View (read-only), Settings
+     * - ADMIN: full access (incl. Customers management)
+     */
+    public Sidebar(Router router, Consumer<String> onTitleChange, Session session) {
         this.onTitleChange = onTitleChange;
+        this.session = session;
 
-        setPreferredSize(new Dimension(240, 0)); // ✅ keep same width
+        setPreferredSize(new Dimension(248, 0));
         setLayout(new BorderLayout());
-        setBorder(new EmptyBorder(16, 12, 16, 12));
-        setBackground(UiKit.WHITE);
+        setBorder(new EmptyBorder(14, 12, 14, 12));
+        setOpaque(false);
 
-        // ---------- Top brand ----------
+        // ---------- Top spacer ----------
         JPanel top = new JPanel();
         top.setOpaque(false);
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
-
-        JPanel brandRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        brandRow.setOpaque(false);
-
-        JLabel brandIcon = new JLabel("\u25A3"); // simple "app" icon
-        brandIcon.setForeground(UiKit.PRIMARY);
-        brandIcon.setFont(UiKit.scaled(brandIcon, Font.BOLD, 1.20f)); // multiplier, not absolute
-
-        JLabel brand = new JLabel("RoomViz");
-        brand.setForeground(UiKit.TEXT);
-        brand.setFont(UiKit.scaled(brand, Font.BOLD, 1.20f));
-
-        brandRow.add(brandIcon);
-        brandRow.add(brand);
-
-        JLabel subtitle = new JLabel("Dashboard");
-        subtitle.setForeground(UiKit.MUTED);
-        subtitle.setFont(UiKit.scaled(subtitle, Font.PLAIN, 0.92f));
-        subtitle.setBorder(new EmptyBorder(6, 2, 0, 0));
-
-        top.add(brandRow);
-        top.add(subtitle);
+        top.setBorder(new EmptyBorder(2, 0, 8, 0));
 
         // ---------- Nav ----------
         JPanel nav = new JPanel();
         nav.setOpaque(false);
-        nav.setLayout(new GridLayout(0, 1, 0, 8));
-        nav.setBorder(new EmptyBorder(16, 0, 0, 0));
+        nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
+
+        boolean customer = isCustomer();
 
         Map<String, NavItem> items = new LinkedHashMap<>();
-        items.put(ScreenKeys.DASHBOARD,      new NavItem("Dashboard", "\u25A6", "Dashboard"));
-        items.put(ScreenKeys.DESIGN_LIBRARY, new NavItem("Design Library", "\u2630", "Design Library"));
-        items.put(ScreenKeys.NEW_DESIGN,     new NavItem("New Design", "+", "New Design Wizard"));
-        items.put(ScreenKeys.PLANNER_2D,     new NavItem("2D Planner", "\u25AD", "2D Planner"));
-        items.put(ScreenKeys.SHADING_COLOR,  new NavItem("Shading & Colour", "\u25CF", "Shading & Colour"));
-        items.put(ScreenKeys.VIEW_3D,        new NavItem("3D View", "\u25B3", "3D View"));
-        items.put(ScreenKeys.SETTINGS,       new NavItem("Settings", "\u2699", "Settings"));
 
+        if (!customer) {
+            // Admin-only items
+            items.put(ScreenKeys.DASHBOARD, new NavItem("Dashboard", FontAwesome.GAUGE, "Dashboard"));
+
+            // Customers management (Admin-only)
+            // NOTE: Ensure ScreenKeys.CUSTOMERS exists: public static final String CUSTOMERS = "customers";
+            items.put(ScreenKeys.CUSTOMERS, new NavItem("Customers", FontAwesome.USERS, "Customers"));
+        }
+
+        // Shared items (Admin + Customer)
+        items.put(ScreenKeys.DESIGN_LIBRARY, new NavItem("Design Library", FontAwesome.SWATCHBOOK, "Design Library"));
+
+        if (!customer) {
+            // Admin-only items
+            items.put(ScreenKeys.NEW_DESIGN, new NavItem("New Design", FontAwesome.PLUS, "New Design Wizard"));
+        }
+
+        // Customer sees "2D View" label (read-only), Admin sees "2D Planner"
+        items.put(
+                ScreenKeys.PLANNER_2D,
+                customer
+                        ? new NavItem("2D View", FontAwesome.VECTOR_SQUARE, "2D View")
+                        : new NavItem("2D Planner", FontAwesome.VECTOR_SQUARE, "2D Planner")
+        );
+
+        if (!customer) {
+            // Admin-only items
+            items.put(ScreenKeys.SHADING_COLOR, new NavItem("Shading & Colour", FontAwesome.PALETTE, "Shading & Colour"));
+        }
+
+        // Shared items
+        items.put(ScreenKeys.VIEW_3D, new NavItem("3D View", FontAwesome.CUBE, "3D View"));
+        items.put(ScreenKeys.SETTINGS, new NavItem("Settings", FontAwesome.GEAR, "Settings"));
+
+        int i = 0;
+        int size = items.size();
         for (Map.Entry<String, NavItem> e : items.entrySet()) {
             final String key = e.getKey();
             final NavItem item = e.getValue();
@@ -78,60 +104,68 @@ public class Sidebar extends JPanel {
             NavButton btn = new NavButton(item.label, item.iconText);
             btn.addActionListener(ev -> go(router, key, item.title));
             nav.add(btn);
+            if (i < size - 1) nav.add(Box.createVerticalStrut(6));
             buttonMap.put(key, btn);
+            i++;
         }
 
         // Listen for route changes to update active state
-        router.addListener(key -> {
-            if (buttonMap.containsKey(key)) {
-                setActive(buttonMap.get(key));
-            }
-        });
+        if (router != null) {
+            router.addListener(key -> {
+                if (buttonMap.containsKey(key)) {
+                    setActive(buttonMap.get(key));
+                }
+            });
+        }
 
-        // ---------- Bottom: logout ----------
+        // ---------- Bottom ----------
         JPanel bottom = new JPanel();
         bottom.setOpaque(false);
         bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
-        bottom.setBorder(new EmptyBorder(12, 0, 0, 0));
+        bottom.setBorder(new EmptyBorder(10, 2, 0, 2));
 
-        JButton logout = new JButton("Logout");
-        logout.setFocusPainted(false);
-        logout.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        logout.setHorizontalAlignment(SwingConstants.CENTER);
-        logout.setFont(UiKit.scaled(logout, Font.PLAIN, 0.98f));
-        logout.setForeground(UiKit.DANGER);
-        logout.setBackground(UiKit.WHITE);
-        logout.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(UiKit.BORDER, 1, true),
-                new EmptyBorder(10, 12, 10, 12)
+        JPanel tipCard = new JPanel();
+        tipCard.setOpaque(true);
+        tipCard.setBackground(isHighContrast() ? UiKit.WHITE : UiKit.TIP_BG);
+        tipCard.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : UiKit.TIP_BORDER, 1, true),
+                new EmptyBorder(9, 10, 9, 10)
         ));
-        logout.addActionListener(e -> frame.goToLogin());
+        tipCard.setLayout(new BoxLayout(tipCard, BoxLayout.Y_AXIS));
 
-        // subtle hover for logout (HC-safe)
-        logout.addMouseListener(new MouseAdapter() {
-            @Override public void mouseEntered(MouseEvent e) {
-                logout.setBackground(isHighContrast() ? UiKit.WHITE : new Color(0xFEF2F2)); // red-50
-            }
-            @Override public void mouseExited(MouseEvent e) {
-                logout.setBackground(UiKit.WHITE);
-            }
-        });
+        JLabel tipTitle = new JLabel("Quick Tip");
+        tipTitle.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.META_PILL_FG);
+        tipTitle.setFont(UiKit.scaled(tipTitle, Font.BOLD, 0.84f));
 
-        bottom.add(Box.createVerticalGlue());
-        bottom.add(logout);
+        JLabel tipText = new JLabel("<html>Pick a design from <b>Design Library</b> before opening tools.</html>");
+        tipText.setForeground(UiKit.MUTED);
+        tipText.setFont(UiKit.scaled(tipText, Font.PLAIN, 0.82f));
+
+        tipCard.add(tipTitle);
+        tipCard.add(Box.createVerticalStrut(3));
+        tipCard.add(tipText);
+        bottom.add(tipCard);
 
         add(top, BorderLayout.NORTH);
         add(nav, BorderLayout.CENTER);
         add(bottom, BorderLayout.SOUTH);
     }
 
+    private boolean isCustomer() {
+        // Null-safe:
+        // - If session/user missing -> treat as ADMIN to avoid accidental lockout
+        if (session == null) return false;
+        User u = session.getCurrentUser();
+        if (u == null) return false;
+        return u.isCustomer();
+    }
+
     private static boolean isHighContrast() {
-        // In your UiKit HC palette: TEXT/BORDER become black and BG becomes white.
-        return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
+        return UiKit.isHighContrastMode();
     }
 
     private void go(Router router, String key, String title) {
-        router.show(key);
+        if (router != null) router.show(key);
         if (onTitleChange != null) onTitleChange.accept(title);
     }
 
@@ -154,6 +188,7 @@ public class Sidebar extends JPanel {
         final String label;
         final String iconText;
         final String title;
+
         NavItem(String label, String iconText, String title) {
             this.label = label;
             this.iconText = iconText;
@@ -169,6 +204,8 @@ public class Sidebar extends JPanel {
 
         private final JLabel icon;
         private final JLabel text;
+        private Color iconBg;
+        private Color iconBorder;
 
         NavButton(String label, String iconText) {
             setLayout(new BorderLayout(10, 0));
@@ -178,18 +215,20 @@ public class Sidebar extends JPanel {
             setFocusPainted(false);
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             setPreferredSize(new Dimension(0, 44));
+            setBorder(new EmptyBorder(0, 0, 0, 0));
 
             icon = new JLabel(iconText);
             icon.setHorizontalAlignment(SwingConstants.CENTER);
-            icon.setPreferredSize(new Dimension(28, 28));
-            icon.setFont(UiKit.scaled(icon, Font.BOLD, 0.98f));
+            icon.setPreferredSize(new Dimension(24, 24));
+            icon.setFont(FontAwesome.solid(13f));
             icon.setForeground(UiKit.MUTED);
+            icon.setOpaque(false);
 
             text = new JLabel(label);
-            text.setFont(UiKit.scaled(text, Font.PLAIN, 1.00f));
+            text.setFont(UiKit.scaled(text, Font.PLAIN, 0.96f));
             text.setForeground(UiKit.TEXT);
 
-            JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+            JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
             left.setOpaque(false);
             left.add(icon);
             left.add(text);
@@ -197,40 +236,66 @@ public class Sidebar extends JPanel {
             add(left, BorderLayout.CENTER);
 
             addMouseListener(new MouseAdapter() {
-                @Override public void mouseEntered(MouseEvent e) { hover = true; repaint(); }
-                @Override public void mouseExited(MouseEvent e) { hover = false; repaint(); }
+                @Override public void mouseEntered(MouseEvent e) { hover = true; applyVisualState(); repaint(); }
+                @Override public void mouseExited(MouseEvent e) { hover = false; applyVisualState(); repaint(); }
             });
+
+            applyVisualState();
         }
 
         void setActive(boolean v) {
             this.active = v;
-
-            if (active) {
-                text.setForeground(activeText());
-                icon.setForeground(activeText());
-                text.setFont(UiKit.scaled(text, Font.BOLD, 1.00f));
-            } else {
-                text.setForeground(UiKit.TEXT);
-                icon.setForeground(UiKit.MUTED);
-                text.setFont(UiKit.scaled(text, Font.PLAIN, 1.00f));
-            }
+            applyVisualState();
             repaint();
         }
 
+        private void applyVisualState() {
+            if (active) {
+                text.setForeground(activeText());
+                text.setFont(UiKit.scaled(text, Font.BOLD, 0.96f));
+                icon.setForeground(activeText());
+                iconBg = isHighContrast() ? UiKit.WHITE
+                        : (UiKit.isDarkBlueMode() ? new Color(0x1E3A8A) : new Color(0xE0E7FF));
+                iconBorder = isHighContrast() ? UiKit.BORDER
+                        : (UiKit.isDarkBlueMode() ? new Color(0x3B82F6) : new Color(0xC7D2FE));
+            } else if (hover) {
+                text.setForeground(UiKit.TEXT);
+                text.setFont(UiKit.scaled(text, Font.PLAIN, 0.96f));
+                icon.setForeground(isHighContrast() ? UiKit.TEXT
+                        : (UiKit.isDarkBlueMode() ? new Color(0xCBD5E1) : new Color(0x475569)));
+                iconBg = isHighContrast() ? UiKit.WHITE
+                        : (UiKit.isDarkBlueMode() ? new Color(0x17243B) : new Color(0xF1F5F9));
+                iconBorder = isHighContrast() ? UiKit.BORDER
+                        : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE2E8F0));
+            } else {
+                text.setForeground(UiKit.TEXT);
+                text.setFont(UiKit.scaled(text, Font.PLAIN, 0.96f));
+                icon.setForeground(UiKit.MUTED);
+                iconBg = isHighContrast() ? UiKit.WHITE
+                        : (UiKit.isDarkBlueMode() ? new Color(0x111B2E) : new Color(0xFFFFFF));
+                iconBorder = isHighContrast() ? UiKit.BORDER
+                        : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE2E8F0));
+            }
+        }
+
         private Color activeText() {
-            return isHighContrast() ? UiKit.TEXT : new Color(0x4338CA); // indigo-700
+            return isHighContrast() ? UiKit.TEXT
+                    : (UiKit.isDarkBlueMode() ? new Color(0xBFDBFE) : new Color(0x1E3A8A));
         }
 
         private Color activeBg() {
-            return isHighContrast() ? UiKit.WHITE : new Color(0xEEF2FF); // indigo-50
+            return isHighContrast() ? UiKit.WHITE
+                    : (UiKit.isDarkBlueMode() ? new Color(0x172554) : new Color(0xEEF2FF));
         }
 
         private Color activeBorder() {
-            return isHighContrast() ? UiKit.BORDER : new Color(0xC7D2FE); // indigo-200
+            return isHighContrast() ? UiKit.BORDER
+                    : (UiKit.isDarkBlueMode() ? new Color(0x3B82F6) : new Color(0xC7D2FE));
         }
 
         private Color hoverBg() {
-            return isHighContrast() ? UiKit.WHITE : new Color(0xF3F4F6); // gray-100
+            return isHighContrast() ? UiKit.WHITE
+                    : (UiKit.isDarkBlueMode() ? new Color(0x0F172A) : new Color(0xF8FAFC));
         }
 
         @Override
@@ -247,13 +312,48 @@ public class Sidebar extends JPanel {
 
                 g2.setColor(activeBorder());
                 g2.drawRoundRect(0, 0, w - 1, h - 1, 14, 14);
+
+                g2.setColor(activeText());
+                g2.fillRoundRect(1, 8, 3, h - 16, 3, 3);
             } else if (hover) {
                 g2.setColor(hoverBg());
                 g2.fillRoundRect(0, 0, w, h, 14, 14);
+                g2.setColor(isHighContrast() ? UiKit.BORDER
+                        : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE2E8F0)));
+                g2.drawRoundRect(0, 0, w - 1, h - 1, 14, 14);
+            }
+
+            Rectangle r = icon.getBounds();
+            if (r.width > 0 && r.height > 0) {
+                g2.setColor(iconBg);
+                g2.fillRoundRect(r.x, r.y, r.width, r.height, 8, 8);
+                g2.setColor(iconBorder);
+                g2.drawRoundRect(r.x, r.y, r.width - 1, r.height - 1, 8, 8);
             }
 
             g2.dispose();
             super.paintComponent(g);
         }
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        int w = getWidth();
+        int h = getHeight();
+
+        // Sidebar background
+        g2.setColor(UiKit.WHITE);
+        g2.fillRect(0, 0, w, h);
+
+        // Right divider line
+        g2.setColor(isHighContrast() ? UiKit.BORDER
+                : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE5E7EB)));
+        g2.drawLine(w - 1, 0, w - 1, h);
+
+        g2.dispose();
+        super.paintComponent(g);
     }
 }
