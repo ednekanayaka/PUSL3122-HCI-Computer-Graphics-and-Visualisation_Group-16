@@ -9,12 +9,10 @@ import com.roomviz.model.Design;
 import com.roomviz.model.DesignStatus;
 import com.roomviz.model.RoomSpec;
 import com.roomviz.ui.Mini2DPreviewPanel;
+import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.border.LineBorder;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.text.SimpleDateFormat;
@@ -32,16 +30,10 @@ import java.util.Locale;
  */
 public class DashboardPage extends JPanel {
 
-    // ----- Palette (Figma-like) -----
-    private static final Color BG = new Color(0xF6F7FB);
-    private static final Color TEXT = new Color(0x111827);
-    private static final Color MUTED = new Color(0x6B7280);
-    private static final Color BORDER = new Color(0xE5E7EB);
-    private static final Color WHITE = Color.WHITE;
-    private static final Color PRIMARY = new Color(0x4F46E5);
-    private static final Color PRIMARY_DARK = new Color(0x6D28D9);
-    private static final Color SUCCESS = new Color(0x16A34A);
-    private static final Color WARN = new Color(0xF59E0B);
+    // Use UiKit colors where possible
+    private static final Color SUCCESS_PILL_BG = new Color(0xDCFCE7);
+    private static final Color WARN_PILL_BG = new Color(0xFFEDD5);
+    private static final Color PURPLE_PILL_BG = new Color(0xEDE9FE);
 
     private static final String SEARCH_PLACEHOLDER = "Search designs by name, room type, or client...";
 
@@ -78,41 +70,58 @@ public class DashboardPage extends JPanel {
 
         ScrollablePanel content = new ScrollablePanel();
         content.setOpaque(false);
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setLayout(new GridBagLayout()); // Use GridBagLayout for flexible centering
         content.setBorder(new EmptyBorder(22, 24, 22, 24));
 
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.NORTH;
+        gbc.insets = new Insets(0, 0, 0, 0);
+
+        // Inner column to cap width
+        JPanel column = new JPanel();
+        column.setOpaque(false);
+        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
+        // Cap width but allow shrinking for responsiveness
+        column.setMaximumSize(new Dimension(860, 99999));
+
         // Header
-        content.add(welcomeHeader());
-        content.add(vSpace(14));
+        column.add(welcomeHeader());
+        column.add(vSpace(28));
 
         // Stats cards row (dynamic)
         statsRowRef = new JPanel(new GridLayout(1, 3, 14, 0));
         statsRowRef.setOpaque(false);
-        content.add(statsRowRef);
-        content.add(vSpace(16));
+        column.add(statsRowRef);
+        column.add(vSpace(32));
 
         // CTA
-        content.add(ctaCard());
-        content.add(vSpace(18));
+        column.add(ctaCard());
+        column.add(vSpace(32));
 
         // Search + Filters (wired)
-        content.add(searchAndFilters());
-        content.add(vSpace(14));
+        column.add(searchAndFilters());
+        column.add(vSpace(32));
 
         // Recent Designs
-        content.add(recentHeader());
-        content.add(vSpace(10));
+        column.add(recentHeader());
+        column.add(vSpace(14));
 
         recentListRef = new JPanel();
         recentListRef.setOpaque(false);
         recentListRef.setLayout(new BoxLayout(recentListRef, BoxLayout.Y_AXIS));
-        content.add(recentListRef);
+        column.add(recentListRef);
 
-        content.add(vSpace(10));
+        column.add(vSpace(20));
 
+        JPanel loadMoreBox = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        loadMoreBox.setOpaque(false);
         loadMoreLabel = new JLabel("Load More Designs \u2193");
-        loadMoreLabel.setForeground(PRIMARY);
-        loadMoreLabel.setFont(loadMoreLabel.getFont().deriveFont(Font.PLAIN, 12.5f));
+        loadMoreLabel.setForeground(UiKit.PRIMARY);
+        loadMoreLabel.setFont(UiKit.scaled(loadMoreLabel, Font.BOLD, 1.0f));
         loadMoreLabel.setBorder(new EmptyBorder(6, 6, 6, 6));
         loadMoreLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         loadMoreLabel.addMouseListener(new MouseAdapter() {
@@ -123,12 +132,22 @@ public class DashboardPage extends JPanel {
                 repaint();
             }
         });
-        content.add(loadMoreLabel);
+        loadMoreBox.add(loadMoreLabel);
+        column.add(loadMoreBox);
+        column.add(vSpace(40));
+
+        // Create a wrapper to limit max width while staying centered
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.setMaximumSize(new Dimension(860, 99999));
+        wrapper.add(column, BorderLayout.CENTER);
+
+        content.add(wrapper, gbc);
 
         JScrollPane scroller = new JScrollPane(content);
         scroller.setBorder(BorderFactory.createEmptyBorder());
         scroller.getViewport().setOpaque(true);
-        scroller.getViewport().setBackground(BG);
+        scroller.getViewport().setBackground(UiKit.BG);
         scroller.setOpaque(false);
         scroller.getVerticalScrollBar().setUnitIncrement(18);
 
@@ -187,13 +206,13 @@ public class DashboardPage extends JPanel {
         }
 
         statsRowRef.add(statCard(String.valueOf(savedCount), "Saved Designs",
-                "All time", SUCCESS, new Color(0xEEFDF3), new Color(0xDCFCE7)));
+                "All time", new Color(0x16A34A), SUCCESS_PILL_BG, new Color(0xDCFCE7)));
 
         statsRowRef.add(statCard(String.valueOf(inProgressCount), "In Progress",
-                "With items", WARN, new Color(0xFFF7ED), new Color(0xFFEDD5)));
+                "With items", new Color(0xF59E0B), WARN_PILL_BG, new Color(0xFFEDD5)));
 
         statsRowRef.add(statCard(String.valueOf(editedToday), "Recently Edited",
-                "Today", new Color(0x7C3AED), new Color(0xF5F3FF), new Color(0xEDE9FE)));
+                "Today", new Color(0x7C3AED), PURPLE_PILL_BG, new Color(0xEDE9FE)));
     }
 
     private void refreshRecentList() {
@@ -245,7 +264,10 @@ public class DashboardPage extends JPanel {
 
         boolean canLoadMore = total > shown;
         loadMoreLabel.setVisible(canLoadMore);
-        if (canLoadMore) loadMoreLabel.setText("Load More Designs \u2193");
+        if (canLoadMore) {
+            loadMoreLabel.setText("Load More Designs \u2193");
+            loadMoreLabel.setForeground(UiKit.PRIMARY);
+        }
     }
 
     private List<Design> applyRecentFilters(List<Design> all) {
@@ -351,71 +373,78 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent emptyRecentCard() {
-        RoundedPanel card = new RoundedPanel(14, WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(BORDER);
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
-
-        JLabel t = new JLabel("No designs yet");
-        t.setForeground(TEXT);
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 13.2f));
-
-        JLabel sub = new JLabel("Click “Create New Design” to start your first room visualization.");
-        sub.setForeground(MUTED);
-        sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.2f));
-        sub.setBorder(new EmptyBorder(6, 0, 0, 0));
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new GridBagLayout()); // Center box
+        card.setBorder(new EmptyBorder(40, 20, 40, 20));
 
         JPanel box = new JPanel();
         box.setOpaque(false);
         box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+
+        JLabel t = new JLabel("No designs yet", SwingConstants.CENTER);
+        t.setForeground(UiKit.TEXT);
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.25f));
+        t.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel sub = new JLabel("Click \u201CCreate New Design\u201D to start your first room visualization.", SwingConstants.CENTER);
+        sub.setForeground(UiKit.MUTED);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 1.05f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
+
         box.add(t);
         box.add(sub);
 
-        card.add(box, BorderLayout.CENTER);
+        card.add(box);
         return card;
     }
 
     private JComponent emptyFilteredCard() {
-        RoundedPanel card = new RoundedPanel(14, WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(BORDER);
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new GridBagLayout()); // Center box
+        card.setBorder(new EmptyBorder(40, 20, 40, 20));
 
-        JLabel t = new JLabel("No matching designs");
-        t.setForeground(TEXT);
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 13.2f));
+        JPanel box = new JPanel();
+        box.setOpaque(false);
+        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
 
-        JLabel sub = new JLabel("Try clearing filters or searching with a different keyword.");
-        sub.setForeground(MUTED);
-        sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.2f));
-        sub.setBorder(new EmptyBorder(6, 0, 0, 0));
+        JLabel t = new JLabel("No matching designs", SwingConstants.CENTER);
+        t.setForeground(UiKit.TEXT);
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.25f));
+        t.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel clear = new JLabel("Clear filters");
-        clear.setForeground(PRIMARY);
-        clear.setFont(clear.getFont().deriveFont(Font.BOLD, 12.2f));
+        JLabel sub = new JLabel("Try clearing filters or searching with a different keyword.", SwingConstants.CENTER);
+        sub.setForeground(UiKit.MUTED);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 1.05f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel clear = new JLabel("Clear filters", SwingConstants.CENTER);
+        clear.setForeground(UiKit.PRIMARY);
+        clear.setFont(UiKit.scaled(clear, Font.BOLD, 1.05f));
         clear.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        clear.setBorder(new EmptyBorder(10, 0, 0, 0));
+        clear.setBorder(new EmptyBorder(14, 0, 0, 0));
+        clear.setAlignmentX(Component.CENTER_ALIGNMENT);
         clear.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 clearDashboardFilters();
             }
         });
 
-        JPanel box = new JPanel();
-        box.setOpaque(false);
-        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
         box.add(t);
         box.add(sub);
         box.add(clear);
 
-        card.add(box, BorderLayout.CENTER);
+        card.add(box);
         return card;
     }
 
     private void clearDashboardFilters() {
-        if (searchField != null) setPlaceholder(searchField, SEARCH_PLACEHOLDER);
+        if (searchField != null) searchField.setText("");
 
         filterLast7Days = false;
         filterRoomSize = null;
@@ -443,12 +472,12 @@ public class DashboardPage extends JPanel {
         JLabel l = (JLabel) chip;
         if (active) {
             l.setBackground(new Color(0xEEF2FF));
-            l.setForeground(PRIMARY_DARK);
-            l.setFont(l.getFont().deriveFont(Font.BOLD, 11.5f));
+            l.setForeground(UiKit.PRIMARY_DARK); // Assuming PRIMARY_DARK exists in UiKit
+            l.setFont(UiKit.scaled(l, Font.BOLD, 0.95f));
         } else {
             l.setBackground(new Color(0xF3F4F6));
             l.setForeground(new Color(0x374151));
-            l.setFont(l.getFont().deriveFont(Font.PLAIN, 11.5f));
+            l.setFont(UiKit.scaled(l, Font.PLAIN, 0.95f));
         }
         l.repaint();
     }
@@ -460,14 +489,16 @@ public class DashboardPage extends JPanel {
         p.setOpaque(false);
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
-        JLabel h1 = new JLabel("Welcome back!");
-        h1.setForeground(TEXT);
-        h1.setFont(h1.getFont().deriveFont(Font.BOLD, 26f));
+        JLabel h1 = new JLabel("Welcome back!", SwingConstants.CENTER);
+        h1.setForeground(UiKit.TEXT);
+        h1.setFont(UiKit.scaled(h1, Font.BOLD, 1.8f));
+        h1.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel sub = new JLabel("Ready to create stunning furniture visualizations for your clients?");
-        sub.setForeground(MUTED);
-        sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.5f));
-        sub.setBorder(new EmptyBorder(6, 0, 0, 0));
+        JLabel sub = new JLabel("Ready to create stunning furniture visualizations for your clients?", SwingConstants.CENTER);
+        sub.setForeground(UiKit.MUTED);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 1.1f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         p.add(h1);
         p.add(sub);
@@ -475,22 +506,22 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent statCard(String value, String label, String pillText, Color pillFg, Color pillBg, Color iconBg) {
-        RoundedPanel card = new RoundedPanel(14, WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(16, 16, 16, 16));
         card.setOpaque(false);
-        card.setBorderPaint(BORDER);
+        card.setBorderPaint(UiKit.BORDER);
 
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
 
-        RoundedPanel icon = new RoundedPanel(10, iconBg);
-        icon.setPreferredSize(new Dimension(32, 32));
+        UiKit.RoundedPanel icon = new UiKit.RoundedPanel(10, iconBg);
+        icon.setPreferredSize(new Dimension(34, 34));
         icon.setOpaque(false);
         icon.setLayout(new GridBagLayout());
         JLabel dot = new JLabel("\u25A0");
         dot.setForeground(pillFg);
-        dot.setFont(dot.getFont().deriveFont(Font.BOLD, 10f));
+        dot.setFont(dot.getFont().deriveFont(Font.BOLD, 11f));
         icon.add(dot);
 
         JLabel pill = pill(pillText, pillFg, pillBg);
@@ -501,16 +532,16 @@ public class DashboardPage extends JPanel {
         JPanel mid = new JPanel();
         mid.setOpaque(false);
         mid.setLayout(new BoxLayout(mid, BoxLayout.Y_AXIS));
-        mid.setBorder(new EmptyBorder(12, 2, 0, 0));
+        mid.setBorder(new EmptyBorder(14, 2, 0, 0));
 
         JLabel v = new JLabel(value);
-        v.setForeground(TEXT);
-        v.setFont(v.getFont().deriveFont(Font.BOLD, 22f));
+        v.setForeground(UiKit.TEXT);
+        v.setFont(UiKit.scaled(v, Font.BOLD, 1.5f));
 
         JLabel l = new JLabel(label);
-        l.setForeground(MUTED);
-        l.setFont(l.getFont().deriveFont(Font.PLAIN, 12.2f));
-        l.setBorder(new EmptyBorder(2, 0, 0, 0));
+        l.setForeground(UiKit.MUTED);
+        l.setFont(UiKit.scaled(l, Font.PLAIN, 0.95f));
+        l.setBorder(new EmptyBorder(4, 0, 0, 0));
 
         mid.add(v);
         mid.add(l);
@@ -521,85 +552,59 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent ctaCard() {
-        GradientPanel g = new GradientPanel(PRIMARY, PRIMARY_DARK, 18);
+        UiKit.RoundedPanel g = new UiKit.RoundedPanel(18, UiKit.PRIMARY);
         g.setLayout(new BoxLayout(g, BoxLayout.Y_AXIS));
-        g.setBorder(new EmptyBorder(22, 22, 22, 22));
+        g.setBorder(new EmptyBorder(24, 24, 24, 24));
+        g.setBorderPaint(UiKit.PRIMARY_DARK);
 
         JLabel title = new JLabel("Start a New Visualization");
         title.setForeground(Color.WHITE);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.3f));
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JLabel sub = new JLabel("Create immersive room designs for your live consultations");
         sub.setForeground(new Color(255, 255, 255, 210));
-        sub.setFont(sub.getFont().deriveFont(Font.PLAIN, 12.5f));
-        sub.setBorder(new EmptyBorder(6, 0, 0, 0));
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JButton btn = primaryButton("+  Create New Design");
+        JButton btn = UiKit.primaryButton("+  Create New Design");
+        btn.setBackground(Color.WHITE);
+        btn.setForeground(UiKit.PRIMARY);
+        btn.setFont(UiKit.scaled(btn, Font.BOLD, 1.0f));
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
         btn.addActionListener(e -> router.show(ScreenKeys.NEW_DESIGN));
 
         g.add(title);
         g.add(sub);
-        g.add(vSpace(14));
+        g.add(vSpace(18));
         g.add(btn);
         return g;
     }
 
     private JComponent searchAndFilters() {
-        RoundedPanel card = new RoundedPanel(14, WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(BORDER);
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(12, 12, 12, 12));
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new BorderLayout(14, 14));
+        card.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        JPanel top = new JPanel(new BorderLayout(10, 0));
+        // Top Row: Search (Left) + All Filters (Right)
+        JPanel top = new JPanel(new BorderLayout(14, 0));
         top.setOpaque(false);
 
-        searchField = new JTextField(30);
-        setPlaceholder(searchField, SEARCH_PLACEHOLDER);
-
-        searchField.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER, 1, true),
-                new EmptyBorder(10, 12, 10, 12)
-        ));
-
-        searchField.addFocusListener(new FocusAdapter() {
-            @Override public void focusGained(FocusEvent e) {
-                if (SEARCH_PLACEHOLDER.equals(searchField.getText())) {
-                    searchField.setText("");
-                    searchField.setForeground(TEXT);
-                }
-            }
-            @Override public void focusLost(FocusEvent e) {
-                if (searchField.getText().trim().isEmpty()) {
-                    setPlaceholder(searchField, SEARCH_PLACEHOLDER);
-                }
-            }
-        });
-
-        // live search
-        searchField.getDocument().addDocumentListener(new DocumentListener() {
-            private void update() {
-                SwingUtilities.invokeLater(() -> {
-                    recentLimit = 5;
-                    refreshRecentList();
-                });
-            }
-            @Override public void insertUpdate(DocumentEvent e) { update(); }
-            @Override public void removeUpdate(DocumentEvent e) { update(); }
-            @Override public void changedUpdate(DocumentEvent e) { update(); }
-        });
-
-        JButton allFilters = ghostButton("All Filters");
-        allFilters.setPreferredSize(new Dimension(110, allFilters.getPreferredSize().height));
+        searchField = UiKit.searchField(SEARCH_PLACEHOLDER);
+        searchField.setPreferredSize(new Dimension(200, 38)); // Adjusted search bar height
+        
+        JButton allFilters = UiKit.ghostButton("All Filters");
+        allFilters.setFont(UiKit.scaled(allFilters, Font.BOLD, 0.95f));
         allFilters.addActionListener(e -> clearDashboardFilters());
 
         top.add(searchField, BorderLayout.CENTER);
         top.add(allFilters, BorderLayout.EAST);
 
-        JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 10));
+        // Bottom Row: Chips
+        JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         chips.setOpaque(false);
 
         chipLast7 = chipInteractive("Last 7 Days \u25BC", () -> {
@@ -617,10 +622,7 @@ public class DashboardPage extends JPanel {
 
             if (chipRoomSize instanceof JLabel) {
                 JLabel l = (JLabel) chipRoomSize;
-                String label = (filterRoomSize == null)
-                        ? "Room Size \u25BC"
-                        : ("Room Size: " + filterRoomSize + " \u25BC");
-                l.setText(label);
+                l.setText((filterRoomSize == null) ? "Room Size \u25BC" : "Room Size: " + filterRoomSize + " \u25BC");
             }
 
             recentLimit = 5;
@@ -637,10 +639,7 @@ public class DashboardPage extends JPanel {
 
             if (chipRoomShape instanceof JLabel) {
                 JLabel l = (JLabel) chipRoomShape;
-                String label = (filterRoomShape == null)
-                        ? "Room Shape \u25BC"
-                        : ("Room Shape: " + filterRoomShape + " \u25BC");
-                l.setText(label);
+                l.setText((filterRoomShape == null) ? "Room Shape \u25BC" : "Room Shape: " + filterRoomShape + " \u25BC");
             }
 
             recentLimit = 5;
@@ -648,12 +647,11 @@ public class DashboardPage extends JPanel {
             refreshRecentList();
         });
 
-        // ✅ Only these filters are shown
         chips.add(chipLast7);
         chips.add(chipRoomSize);
         chips.add(chipRoomShape);
 
-        card.add(top, BorderLayout.NORTH);
+        card.add(top, BorderLayout.CENTER);
         card.add(chips, BorderLayout.SOUTH);
 
         updateChipStates();
@@ -661,7 +659,7 @@ public class DashboardPage extends JPanel {
     }
 
     private JComponent chipInteractive(String text, Runnable onClick) {
-        JLabel l = (JLabel) chip(text);
+        JLabel l = (JLabel) UiKit.chip(text);
         l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         l.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) { onClick.run(); }
@@ -674,15 +672,15 @@ public class DashboardPage extends JPanel {
         row.setOpaque(false);
 
         JLabel title = new JLabel("Recent Designs");
-        title.setForeground(TEXT);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 16f));
+        title.setForeground(UiKit.TEXT);
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.2f));
 
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
 
         JLabel sort = new JLabel("Sort by: Latest");
-        sort.setForeground(MUTED);
-        sort.setFont(sort.getFont().deriveFont(Font.PLAIN, 12.2f));
+        sort.setForeground(UiKit.MUTED);
+        sort.setFont(UiKit.scaled(sort, Font.PLAIN, 0.95f));
 
         right.add(sort);
         right.add(iconSquare("\u2630"));
@@ -705,67 +703,90 @@ public class DashboardPage extends JPanel {
         String edited = "Last edited: " + timeAgoLabel(d.getLastUpdatedEpochMs());
         boolean hasItems = d.getItems() != null && !d.getItems().isEmpty();
         String status = hasItems ? "In Progress" : "Draft";
-        Color statusColor = hasItems ? WARN : new Color(0x2563EB);
+        Color statusColor = hasItems ? new Color(0xF59E0B) : new Color(0x2563EB);
 
-        RoundedPanel card = new RoundedPanel(14, WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
         card.setOpaque(false);
-        card.setBorderPaint(BORDER);
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(12, 12, 12, 12));
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new BorderLayout(20, 0));
+        card.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        // Left section: Preview + Info
+        JPanel left = new JPanel(new BorderLayout(18, 0));
+        left.setOpaque(false);
 
         Mini2DPreviewPanel thumb = new Mini2DPreviewPanel();
-        thumb.setPreferredSize(new Dimension(72, 52));
+        thumb.setPreferredSize(new Dimension(86, 62));
         thumb.setDesign(d);
 
-        JPanel mid = new JPanel();
-        mid.setOpaque(false);
-        mid.setLayout(new BoxLayout(mid, BoxLayout.Y_AXIS));
+        JPanel info = new JPanel();
+        info.setOpaque(false);
+        info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
 
-        JLabel t = new JLabel(title + " - " + client);
-        t.setForeground(TEXT);
-        t.setFont(t.getFont().deriveFont(Font.BOLD, 13.2f));
+        JLabel t = new JLabel(title);
+        t.setForeground(UiKit.TEXT);
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.15f));
+        t.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel clientLbl = new JLabel(client);
+        clientLbl.setForeground(UiKit.MUTED);
+        clientLbl.setFont(UiKit.scaled(clientLbl, Font.PLAIN, 1.05f));
+        clientLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel meta = new JLabel(edited);
-        meta.setForeground(MUTED);
-        meta.setFont(meta.getFont().deriveFont(Font.PLAIN, 11.5f));
-        meta.setBorder(new EmptyBorder(2, 0, 0, 0));
+        meta.setForeground(UiKit.MUTED);
+        meta.setFont(UiKit.scaled(meta, Font.PLAIN, 0.90f));
+        meta.setBorder(new EmptyBorder(4, 0, 8, 0));
+        meta.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JPanel pills = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 6));
+        JPanel pills = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         pills.setOpaque(false);
+        pills.setAlignmentX(Component.LEFT_ALIGNMENT);
         pills.add(metaPill(size));
         pills.add(metaPill(shape));
         pills.add(metaPill(scheme));
 
-        mid.add(t);
-        mid.add(meta);
-        mid.add(pills);
+        info.add(t);
+        info.add(clientLbl);
+        info.add(meta);
+        info.add(pills);
 
+        left.add(thumb, BorderLayout.WEST);
+        left.add(info, BorderLayout.CENTER);
+
+        // Right section: Status + Actions
         JPanel right = new JPanel();
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
 
-        JLabel st = new JLabel(status);
+        JLabel st = new JLabel(status.toUpperCase());
         st.setForeground(statusColor);
-        st.setFont(st.getFont().deriveFont(Font.BOLD, 11.5f));
+        st.setFont(UiKit.scaled(st, Font.BOLD, 0.85f));
         st.setAlignmentX(Component.RIGHT_ALIGNMENT);
+        st.setBorder(new EmptyBorder(0, 0, 10, 4));
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 10));
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         actions.setOpaque(false);
+        actions.setAlignmentX(Component.RIGHT_ALIGNMENT);
 
-        JButton open = primarySmall("Open");
-        JButton dup = ghostSmall("Duplicate");
-        JButton del = dangerSmall("Delete");
-
+        JButton open = UiKit.primaryButton("Open");
+        open.setFont(UiKit.scaled(open, Font.BOLD, 0.95f));
+        open.setMargin(new Insets(6, 14, 6, 14));
         open.addActionListener(e -> {
             appState.setCurrentDesignId(d.getId());
             router.show(ScreenKeys.PLANNER_2D);
         });
-
+        
+        JButton dup = UiKit.ghostButton("Duplicate");
+        dup.setFont(UiKit.scaled(dup, Font.BOLD, 0.95f));
         dup.addActionListener(e -> {
             appState.getRepo().duplicate(d.getId());
             refreshDynamicSections();
         });
 
+        JButton del = UiKit.ghostButton("Delete");
+        del.setForeground(new Color(0xDC2626));
+        del.setFont(UiKit.scaled(del, Font.BOLD, 0.95f));
         del.addActionListener(e -> {
             int ok = JOptionPane.showConfirmDialog(
                     this,
@@ -789,17 +810,12 @@ public class DashboardPage extends JPanel {
         right.add(st);
         right.add(actions);
 
-        JPanel left = new JPanel(new BorderLayout(12, 0));
-        left.setOpaque(false);
-        left.add(thumb, BorderLayout.WEST);
-        left.add(mid, BorderLayout.CENTER);
-
         card.add(left, BorderLayout.CENTER);
         card.add(right, BorderLayout.EAST);
 
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) { card.setFill(new Color(0xFAFAFB)); card.repaint(); }
-            @Override public void mouseExited(MouseEvent e) { card.setFill(WHITE); card.repaint(); }
+            @Override public void mouseExited(MouseEvent e) { card.setFill(UiKit.WHITE); card.repaint(); }
             @Override public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
                     appState.setCurrentDesignId(d.getId());
@@ -811,21 +827,22 @@ public class DashboardPage extends JPanel {
         return card;
     }
 
+    private JComponent iconSquare(String text) {
+        UiKit.RoundedPanel p = new UiKit.RoundedPanel(10, UiKit.WHITE);
+        p.setOpaque(false);
+        p.setBorderPaint(UiKit.BORDER);
+        p.setPreferredSize(new Dimension(32, 32));
+        p.setLayout(new GridBagLayout());
+        JLabel l = new JLabel(text);
+        l.setForeground(UiKit.MUTED);
+        l.setFont(UiKit.scaled(l, Font.PLAIN, 0.90f));
+        p.add(l);
+        return p;
+    }
+
+    /* ===================== Custom panels ===================== */
+
     /* ===================== Helpers ===================== */
-
-    private static void setPlaceholder(JTextField field, String text) {
-        field.setText(text);
-        field.setForeground(new Color(0x9CA3AF));
-    }
-
-    private static long startOfTodayEpochMs() {
-        Calendar cal = Calendar.getInstance();
-        cal.set(Calendar.HOUR_OF_DAY, 0);
-        cal.set(Calendar.MINUTE, 0);
-        cal.set(Calendar.SECOND, 0);
-        cal.set(Calendar.MILLISECOND, 0);
-        return cal.getTimeInMillis();
-    }
 
     private static String safe(String s, String fallback) {
         if (s == null) return fallback;
@@ -856,7 +873,14 @@ public class DashboardPage extends JPanel {
         }
     }
 
-    /* ===================== Small UI bits ===================== */
+    private static long startOfTodayEpochMs() {
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
+    }
 
     private static Component vSpace(int px) {
         return Box.createRigidArea(new Dimension(0, px));
@@ -880,153 +904,6 @@ public class DashboardPage extends JPanel {
         l.setFont(l.getFont().deriveFont(Font.PLAIN, 11.2f));
         l.setBorder(new EmptyBorder(3, 8, 3, 8));
         return l;
-    }
-
-    private static JComponent chip(String text) {
-        JLabel l = new JLabel(text);
-        l.setOpaque(true);
-        l.setBackground(new Color(0xF3F4F6));
-        l.setForeground(new Color(0x374151));
-        l.setFont(l.getFont().deriveFont(Font.PLAIN, 11.5f));
-        l.setBorder(new EmptyBorder(6, 10, 6, 10));
-        return l;
-    }
-
-    private static JButton primaryButton(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
-        b.setForeground(TEXT);
-        b.setBackground(Color.WHITE);
-        b.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(new Color(255, 255, 255, 140), 1, true),
-                new EmptyBorder(10, 16, 10, 16)
-        ));
-        return b;
-    }
-
-    private static JButton ghostButton(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
-        b.setBackground(Color.WHITE);
-        b.setForeground(new Color(0x111827));
-        b.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER, 1, true),
-                new EmptyBorder(9, 12, 9, 12)
-        ));
-        return b;
-    }
-
-    private static JButton primarySmall(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
-        b.setBackground(PRIMARY);
-        b.setForeground(Color.WHITE);
-        b.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        return b;
-    }
-
-    private static JButton ghostSmall(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
-        b.setBackground(new Color(0xF3F4F6));
-        b.setForeground(new Color(0x111827));
-        b.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        return b;
-    }
-
-    private static JButton dangerSmall(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
-        b.setBackground(Color.WHITE);
-        b.setForeground(new Color(0xDC2626));
-        b.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(new Color(0xFCA5A5), 1, true),
-                new EmptyBorder(8, 12, 8, 12)
-        ));
-        return b;
-    }
-
-    private static JComponent iconSquare(String text) {
-        RoundedPanel p = new RoundedPanel(10, WHITE);
-        p.setOpaque(false);
-        p.setBorderPaint(BORDER);
-        p.setPreferredSize(new Dimension(28, 28));
-        p.setLayout(new GridBagLayout());
-        JLabel l = new JLabel(text);
-        l.setForeground(new Color(0x6B7280));
-        l.setFont(l.getFont().deriveFont(Font.PLAIN, 12f));
-        p.add(l);
-        return p;
-    }
-
-    /* ===================== Custom panels ===================== */
-
-    private static class RoundedPanel extends JPanel {
-        private final int radius;
-        private Color fill;
-        private Color border;
-
-        RoundedPanel(int radius, Color fill) {
-            this.radius = radius;
-            this.fill = fill;
-            setOpaque(false);
-        }
-
-        void setFill(Color c) { this.fill = c; }
-        void setBorderPaint(Color c) { this.border = c; }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int w = getWidth();
-            int h = getHeight();
-
-            if (fill != null) {
-                g2.setColor(fill);
-                g2.fillRoundRect(0, 0, w, h, radius, radius);
-            }
-
-            if (border != null) {
-                g2.setColor(border);
-                g2.drawRoundRect(0, 0, w - 1, h - 1, radius, radius);
-            }
-
-            g2.dispose();
-            super.paintComponent(g);
-        }
-    }
-
-    private static class GradientPanel extends JPanel {
-        private final Color c1, c2;
-        private final int radius;
-
-        GradientPanel(Color c1, Color c2, int radius) {
-            this.c1 = c1;
-            this.c2 = c2;
-            this.radius = radius;
-            setOpaque(false);
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int w = getWidth();
-            int h = getHeight();
-
-            GradientPaint gp = new GradientPaint(0, 0, c1, w, h, c2);
-            g2.setPaint(gp);
-            g2.fillRoundRect(0, 0, w, h, radius, radius);
-
-            g2.dispose();
-            super.paintComponent(g);
-        }
     }
 
     private static class ScrollablePanel extends JPanel implements Scrollable {

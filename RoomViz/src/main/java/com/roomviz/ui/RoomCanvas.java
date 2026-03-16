@@ -1,3 +1,4 @@
+// (FULL FILE) — paste this entire file exactly as-is:
 package com.roomviz.ui;
 
 import com.roomviz.model.FurnitureItem;
@@ -12,6 +13,8 @@ import java.awt.event.*;
 import java.awt.geom.Path2D;
 import java.util.*;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 
 public class RoomCanvas extends JPanel {
 
@@ -28,6 +31,10 @@ public class RoomCanvas extends JPanel {
     // Room boundary (computed each paint from roomSpec + viewport scaling)
     private Shape cachedRoomShape = null;
     private Rectangle cachedRoomBoundsPx = null;
+
+    // ✅ NEW: Saved layout bounds from the Design (used to convert old pixel coords reliably on load)
+    // If a design was saved in fullscreen, and opened in a smaller window, this prevents "push out" drift.
+    private Rectangle legacyLayoutBoundsPx = null;
 
     private Runnable onSelectionChanged = null;
 
@@ -181,6 +188,11 @@ public class RoomCanvas extends JPanel {
         return new Dimension(MIN_CANVAS_W, MIN_CANVAS_H);
     }
 
+    // ✅ NEW: called by Planner2DPage before loading items
+    public void setLegacyLayoutBounds(Rectangle legacyBounds) {
+        this.legacyLayoutBoundsPx = legacyBounds;
+    }
+
     public void setRoomSpec(RoomSpec spec) {
         this.roomSpec = spec;
         cachedRoomBoundsPx = null;
@@ -240,7 +252,7 @@ public class RoomCanvas extends JPanel {
 
         items.add(it);
 
-        // create relative rect
+        // create relative rect (uses current bounds, not legacy)
         RelRect rr = pixelRectToRel(it);
         relById.put(safeId(it), rr);
 
@@ -300,7 +312,7 @@ public class RoomCanvas extends JPanel {
             relById.put(safeId(selected), rr);
         }
 
-        // convert requested pixel pos -> rel pos
+        // convert requested pixel pos -> rel pos (always current)
         rr.x = (x - cachedRoomBoundsPx.getX()) / Math.max(1, cachedRoomBoundsPx.getWidth());
         rr.y = (y - cachedRoomBoundsPx.getY()) / Math.max(1, cachedRoomBoundsPx.getHeight());
 
@@ -368,6 +380,17 @@ public class RoomCanvas extends JPanel {
         relById.remove(safeId(selected));
         items.remove(selected);
         selected = null;
+        repaint();
+        fireSelectionChanged();
+        if (onEditCommit != null) onEditCommit.run();
+    }
+
+    // ✅ Used by the new "Placed Items" side list
+    public void deleteItem(FurnitureItem it) {
+        if (it == null) return;
+        relById.remove(safeId(it));
+        items.remove(it);
+        if (selected == it) selected = null;
         repaint();
         fireSelectionChanged();
         if (onEditCommit != null) onEditCommit.run();
@@ -516,80 +539,128 @@ public class RoomCanvas extends JPanel {
         }
 
         Color base = parseHexOrDefault(safeColorHex(it), new Color(0x3B82F6));
-
         String kind = safeKind(it);
-        boolean round = "TABLE_ROUND".equals(kind);
-        boolean chair = "CHAIR".equals(kind);
 
-        g2.setColor(base);
-
-        if (round) {
-            g2.fillOval(r.x, r.y, r.width, r.height);
-            g2.setColor(new Color(0, 0, 0, 40));
-            g2.setStroke(new BasicStroke(1f));
-            g2.drawOval(r.x, r.y, r.width, r.height);
-
-        } else if (chair) {
-            int backThick = Math.max(4, r.height / 6);
-            int gap = 2;
-
-            int bx = r.x;
-            int by = r.y;
-            int bw = r.width;
-            int bh = backThick;
-
-            int sx = r.x;
-            int sy = r.y + backThick + gap;
-            int sw = r.width;
-            int sh = r.height - (backThick + gap);
-
-            g2.setColor(base);
-            g2.fillRoundRect(bx, by, bw, bh, 4, 4);
-            g2.fillRoundRect(sx, sy, sw, sh, 4, 4);
-
-            g2.setColor(new Color(0, 0, 0, 40));
-            g2.drawRoundRect(bx, by, bw, bh, 4, 4);
-            g2.drawRoundRect(sx, sy, sw, sh, 4, 4);
-
+        // ✅ Draw top-down “actual” 2D shapes (instead of generic boxes + emoji)
+        if ("TABLE_ROUND".equals(kind)) {
+            drawRoundTableTopDown(g2, r, base);
+        } else if ("TABLE_RECT".equals(kind)) {
+            drawRectTableTopDown(g2, r, base);
+        } else if ("CHAIR".equals(kind)) {
+            drawChairTopDown(g2, r, base);
         } else {
-            g2.fillRoundRect(r.x, r.y, r.width, r.height, 8, 8);
-            g2.setColor(new Color(0, 0, 0, 40));
-            g2.drawRoundRect(r.x, r.y, r.width, r.height, 8, 8);
+            // fallback
+            g2.setColor(base);
+            g2.fillRoundRect(r.x, r.y, r.width, r.height, 12, 12);
+            g2.setColor(new Color(0, 0, 0, 55));
+            g2.setStroke(new BasicStroke(1f));
+            g2.drawRoundRect(r.x, r.y, r.width, r.height, 12, 12);
         }
 
+        // shading overlay (darken)
         int shade = safeShadingPercent(it);
         if (shade > 0) {
             int alpha = Math.max(0, Math.min(180, (int) Math.round(180.0 * (shade / 100.0))));
             g2.setColor(new Color(0, 0, 0, alpha));
-            if (round) g2.fillOval(r.x, r.y, r.width, r.height);
-            else if (chair) g2.fillRoundRect(r.x, r.y, r.width, r.height, 6, 6);
-            else g2.fillRoundRect(r.x, r.y, r.width, r.height, 8, 8);
+            // overlay the bounding rect (keeps it simple + consistent)
+            g2.fillRoundRect(r.x, r.y, r.width, r.height, 12, 12);
         }
-
-        String icon = pickIcon(kind, round, chair);
-        int minDim = Math.min(r.width, r.height);
-        float fontSize = Math.max(12f, Math.min(40f, minDim * 0.5f));
-        g2.setFont(g2.getFont().deriveFont(Font.BOLD, fontSize));
-
-        FontMetrics fm = g2.getFontMetrics();
-        int tx = r.x + (r.width - fm.stringWidth(icon)) / 2;
-        int ty = r.y + (r.height + fm.getAscent()) / 2 - (int) (fm.getDescent() * 0.5);
-
-        g2.setColor(new Color(0, 0, 0, 80));
-        g2.drawString(icon, tx + 1, ty + 1);
-
-        g2.setColor(Color.WHITE);
-        g2.drawString(icon, tx, ty);
 
         if (isSel) {
             g2.setColor(new Color(0x2563EB));
             g2.setStroke(new BasicStroke(2.0f));
             int pad = 4;
-            if (round) g2.drawOval(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad);
-            else g2.drawRoundRect(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad, 10, 10);
+            if ("TABLE_ROUND".equals(kind)) {
+                g2.drawOval(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad);
+            } else {
+                g2.drawRoundRect(r.x - pad / 2, r.y - pad / 2, r.width + pad, r.height + pad, 12, 12);
+            }
         }
 
         g2.dispose();
+    }
+
+    // ======= Top-down furniture drawings (2D planner) =======
+
+    private void drawChairTopDown(Graphics2D g2, Rectangle r, Color base) {
+        // seat
+        int inset = Math.max(3, Math.min(r.width, r.height) / 8);
+        Rectangle seat = new Rectangle(
+                r.x + inset,
+                r.y + inset * 2,
+                Math.max(1, r.width - inset * 2),
+                Math.max(1, r.height - inset * 3)
+        );
+
+        // backrest (top side)
+        int backH = Math.max(4, r.height / 5);
+        Rectangle back = new Rectangle(
+                r.x + inset,
+                r.y + inset,
+                Math.max(1, r.width - inset * 2),
+                backH
+        );
+
+        g2.setColor(base);
+        g2.fillRoundRect(seat.x, seat.y, seat.width, seat.height, 10, 10);
+        g2.fillRoundRect(back.x, back.y, back.width, back.height, 10, 10);
+
+        // legs (small circles)
+        int leg = Math.max(3, Math.min(r.width, r.height) / 10);
+        g2.setColor(new Color(0, 0, 0, 45));
+        g2.fillOval(r.x + 2, r.y + 2, leg, leg);
+        g2.fillOval(r.x + r.width - leg - 2, r.y + 2, leg, leg);
+        g2.fillOval(r.x + 2, r.y + r.height - leg - 2, leg, leg);
+        g2.fillOval(r.x + r.width - leg - 2, r.y + r.height - leg - 2, leg, leg);
+
+        // outline
+        g2.setColor(new Color(0, 0, 0, 55));
+        g2.setStroke(new BasicStroke(1f));
+        g2.drawRoundRect(seat.x, seat.y, seat.width, seat.height, 10, 10);
+        g2.drawRoundRect(back.x, back.y, back.width, back.height, 10, 10);
+    }
+
+    private void drawRectTableTopDown(Graphics2D g2, Rectangle r, Color base) {
+        int inset = Math.max(3, Math.min(r.width, r.height) / 10);
+        Rectangle top = new Rectangle(
+                r.x + inset,
+                r.y + inset,
+                Math.max(1, r.width - inset * 2),
+                Math.max(1, r.height - inset * 2)
+        );
+
+        // tabletop
+        g2.setColor(base);
+        g2.fillRoundRect(top.x, top.y, top.width, top.height, 16, 16);
+
+        // legs
+        int leg = Math.max(4, Math.min(r.width, r.height) / 8);
+        g2.setColor(new Color(0, 0, 0, 35));
+        g2.fillRoundRect(r.x + 2, r.y + 2, leg, leg, 8, 8);
+        g2.fillRoundRect(r.x + r.width - leg - 2, r.y + 2, leg, leg, 8, 8);
+        g2.fillRoundRect(r.x + 2, r.y + r.height - leg - 2, leg, leg, 8, 8);
+        g2.fillRoundRect(r.x + r.width - leg - 2, r.y + r.height - leg - 2, leg, leg, 8, 8);
+
+        // outline
+        g2.setColor(new Color(0, 0, 0, 55));
+        g2.setStroke(new BasicStroke(1f));
+        g2.drawRoundRect(top.x, top.y, top.width, top.height, 16, 16);
+    }
+
+    private void drawRoundTableTopDown(Graphics2D g2, Rectangle r, Color base) {
+        g2.setColor(base);
+        g2.fillOval(r.x, r.y, r.width, r.height);
+
+        // inner ring
+        g2.setColor(new Color(255, 255, 255, 35));
+        int ringInset = Math.max(4, Math.min(r.width, r.height) / 8);
+        g2.setStroke(new BasicStroke(1.2f));
+        g2.drawOval(r.x + ringInset, r.y + ringInset, r.width - ringInset * 2, r.height - ringInset * 2);
+
+        // outline
+        g2.setColor(new Color(0, 0, 0, 55));
+        g2.setStroke(new BasicStroke(1f));
+        g2.drawOval(r.x, r.y, r.width, r.height);
     }
 
     private static Color parseHexOrDefault(String hex, Color fallback) {
@@ -616,8 +687,16 @@ public class RoomCanvas extends JPanel {
         return "OBJ@" + System.identityHashCode(it);
     }
 
+    private Rectangle baseBoundsForPixelToRel() {
+        if (legacyLayoutBoundsPx != null && legacyLayoutBoundsPx.width > 0 && legacyLayoutBoundsPx.height > 0) {
+            return legacyLayoutBoundsPx;
+        }
+        return cachedRoomBoundsPx;
+    }
+
     private void syncRelFromPixelsIfMissing() {
         if (cachedRoomBoundsPx == null) return;
+
         for (FurnitureItem it : items) {
             if (it == null) continue;
             String id = safeId(it);
@@ -625,22 +704,28 @@ public class RoomCanvas extends JPanel {
                 relById.put(id, pixelRectToRel(it));
             }
         }
+
+        // ✅ IMPORTANT: legacy bounds are only meant for the initial load conversion
+        // Once rel coords exist, we can clear it so future conversions use current room bounds.
+        legacyLayoutBoundsPx = null;
     }
 
     private RelRect pixelRectToRel(FurnitureItem it) {
         ensureRoomCache();
-        if (cachedRoomBoundsPx == null) return new RelRect(0.1, 0.1, 0.2, 0.2);
 
-        double roomW = Math.max(1, cachedRoomBoundsPx.getWidth());
-        double roomH = Math.max(1, cachedRoomBoundsPx.getHeight());
+        Rectangle base = baseBoundsForPixelToRel();
+        if (base == null) return new RelRect(0.1, 0.1, 0.2, 0.2);
+
+        double roomW = Math.max(1, base.getWidth());
+        double roomH = Math.max(1, base.getHeight());
 
         double px = safeInt(it.getX());
         double py = safeInt(it.getY());
         double pw = Math.max(1, safeInt(it.getW()));
         double ph = Math.max(1, safeInt(it.getH()));
 
-        double rx = (px - cachedRoomBoundsPx.getX()) / roomW;
-        double ry = (py - cachedRoomBoundsPx.getY()) / roomH;
+        double rx = (px - base.getX()) / roomW;
+        double ry = (py - base.getY()) / roomH;
         double rw = pw / roomW;
         double rh = ph / roomH;
 

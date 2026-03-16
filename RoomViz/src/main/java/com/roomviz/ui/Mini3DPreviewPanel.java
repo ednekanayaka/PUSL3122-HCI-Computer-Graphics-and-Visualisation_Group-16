@@ -13,7 +13,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-
 public class Mini3DPreviewPanel extends JPanel {
 
     private Design design;
@@ -130,16 +129,6 @@ public class Mini3DPreviewPanel extends JPanel {
         cutW = Math.max(1, Math.min(roomW - 1, cutW));
         cutD = Math.max(1, Math.min(roomD - 1, cutD));
 
-        // Coordinates in room-space:
-        // Outer bounds:
-        // x: [-roomW/2 .. +roomW/2]
-        // z: [-roomD/2 .. +roomD/2]
-        //
-        // Cutout (TOP-RIGHT by convention):
-        // x: [ +roomW/2 - cutW .. +roomW/2 ]
-        // z: [ -roomD/2 .. -roomD/2 + cutD ]
-        //
-        // L-path (clockwise), matching the same style as your 2D L-shape outline.
         double xL = -roomW / 2.0;
         double xR =  roomW / 2.0;
         double zT = -roomD / 2.0;
@@ -227,35 +216,181 @@ public class Mini3DPreviewPanel extends JPanel {
                                double cos, double sin, double scale, double cx, double cy) {
 
         String kind = safeKind(it);
+
         Color base = parseHex(safe(it == null ? null : it.getColorHex()), new Color(0x3B82F6));
         int shade = clamp(it == null ? 50 : it.getShadingPercent(), 0, 100);
         double mul = 0.65 + (shade / 100.0) * 0.65;
         base = applyBrightness(base, mul);
 
         if (kind.contains("TABLE_ROUND")) {
-            drawCylinder(g2, r, it, base, cos, sin, scale, cx, cy);
+            drawRoundTable(g2, r, it, base, cos, sin, scale, cx, cy);
+            return;
+        }
+
+        if (kind.contains("TABLE_RECT")) {
+            drawRectTable(g2, r, it, base, cos, sin, scale, cx, cy);
             return;
         }
 
         if (kind.contains("CHAIR")) {
-            drawChair(g2, r, it, base, cos, sin, scale, cx, cy);
+            drawChairDetailed(g2, r, it, base, cos, sin, scale, cx, cy);
             return;
         }
 
         // default: block
-        drawBlock(g2, r, it, base, cos, sin, scale, cx, cy);
+        drawPrism(g2, r.cx, r.cz, r.w, r.d, r.rotDeg, 0, guessHeight(it, r.w, r.d),
+                base, cos, sin, scale, cx, cy);
+
+        drawIconOnTop(g2, it, r.cx, guessHeight(it, r.w, r.d), r.cz, cos, sin, scale, cx, cy, r.w, r.d);
     }
 
-    private void drawBlock(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
+    /* ===================== Furniture models (better shapes) ===================== */
+
+    // Rectangular table: 4 legs + tabletop slab
+    private void drawRectTable(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
+                               double cos, double sin, double scale, double cx, double cy) {
+
+        double fullH = guessHeight(it, r.w, r.d);
+
+        double topT = clampD(Math.min(r.w, r.d) * 0.14, 4, fullH * 0.35);
+        double legH = Math.max(2, fullH - topT);
+
+        double legW = clampD(Math.min(r.w, r.d) * 0.14, 3, Math.min(r.w, r.d) * 0.22);
+        double legD = legW;
+
+        // legs positions (local, then rotate into world)
+        double offX = (r.w / 2.0) - (legW / 2.0);
+        double offZ = (r.d / 2.0) - (legD / 2.0);
+
+        Vec2[] legsLocal = new Vec2[]{
+                new Vec2(-offX, -offZ),
+                new Vec2( offX, -offZ),
+                new Vec2( offX,  offZ),
+                new Vec2(-offX,  offZ),
+        };
+
+        Color legCol = applyBrightness(base, 0.78);
+        for (Vec2 lp : legsLocal) {
+            Vec2 wp = rotate2D(lp.x, lp.y, r.rotDeg);
+            drawPrism(g2,
+                    r.cx + wp.x, r.cz + wp.y,
+                    legW, legD, r.rotDeg,
+                    0, legH,
+                    legCol, cos, sin, scale, cx, cy);
+        }
+
+        // tabletop slab
+        Color topCol = applyBrightness(base, 1.05);
+        drawPrism(g2,
+                r.cx, r.cz,
+                r.w, r.d, r.rotDeg,
+                legH, topT,
+                topCol, cos, sin, scale, cx, cy);
+
+        drawIconOnTop(g2, it, r.cx, fullH, r.cz, cos, sin, scale, cx, cy, r.w, r.d);
+    }
+
+    // Round table: pedestal + round top (still “round” but not just a cylinder block)
+    private void drawRoundTable(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
+                                double cos, double sin, double scale, double cx, double cy) {
+
+        double fullH = guessHeight(it, r.w, r.d);
+
+        double topT = clampD(Math.min(r.w, r.d) * 0.14, 4, fullH * 0.35);
+        double legH = Math.max(2, fullH - topT);
+
+        // pedestal radius
+        double pedW = Math.min(r.w, r.d) * 0.24;
+        double pedD = pedW;
+
+        // pedestal (a prism is fine for preview; looks like a column)
+        Color pedCol = applyBrightness(base, 0.78);
+        drawPrism(g2,
+                r.cx, r.cz,
+                pedW, pedD, r.rotDeg,
+                0, legH,
+                pedCol, cos, sin, scale, cx, cy);
+
+        // round top (use cylinder slab)
+        Color topCol = applyBrightness(base, 1.05);
+        drawCylinderAtY(g2, r, it, topCol, legH, topT, cos, sin, scale, cx, cy);
+
+        drawIconOnTop(g2, it, r.cx, fullH, r.cz, cos, sin, scale, cx, cy, r.w, r.d);
+    }
+
+    // Chair: 4 legs + seat slab + backrest slab (looks like a chair, not a cube)
+    private void drawChairDetailed(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
+                                   double cos, double sin, double scale, double cx, double cy) {
+
+        double fullH = guessHeight(it, r.w, r.d);
+
+        double legH = fullH * 0.55;
+        double seatT = clampD(fullH * 0.18, 3, fullH * 0.35);
+
+        double legW = clampD(Math.min(r.w, r.d) * 0.14, 2.5, Math.min(r.w, r.d) * 0.22);
+        double legD = legW;
+
+        double offX = (r.w / 2.0) - (legW / 2.0);
+        double offZ = (r.d / 2.0) - (legD / 2.0);
+
+        Vec2[] legsLocal = new Vec2[]{
+                new Vec2(-offX, -offZ),
+                new Vec2( offX, -offZ),
+                new Vec2( offX,  offZ),
+                new Vec2(-offX,  offZ),
+        };
+
+        Color legCol = applyBrightness(base, 0.75);
+        for (Vec2 lp : legsLocal) {
+            Vec2 wp = rotate2D(lp.x, lp.y, r.rotDeg);
+            drawPrism(g2,
+                    r.cx + wp.x, r.cz + wp.y,
+                    legW, legD, r.rotDeg,
+                    0, legH,
+                    legCol, cos, sin, scale, cx, cy);
+        }
+
+        // seat slab
+        Color seatCol = applyBrightness(base, 0.95);
+        drawPrism(g2,
+                r.cx, r.cz,
+                r.w, r.d, r.rotDeg,
+                legH, seatT,
+                seatCol, cos, sin, scale, cx, cy);
+
+        // backrest slab: thin depth along “back” edge (negative local Z)
+        double backDepth = clampD(r.d * 0.22, 3, r.d * 0.35);
+        double backH = Math.max(2, fullH - (legH + seatT));
+
+        // offset to back edge in local space, then rotate
+        Vec2 localOffset = rotate2D(0, -(r.d / 2.0 - backDepth / 2.0), r.rotDeg);
+
+        Color backCol = applyBrightness(base, 0.88);
+        drawPrism(g2,
+                r.cx + localOffset.x, r.cz + localOffset.y,
+                r.w, backDepth, r.rotDeg,
+                legH + seatT, backH,
+                backCol, cos, sin, scale, cx, cy);
+
+        drawIconOnTop(g2, it, r.cx, fullH, r.cz, cos, sin, scale, cx, cy, r.w, r.d);
+    }
+
+    /* ===================== Core 3D primitives ===================== */
+
+    // Generic prism at yBase..yBase+height
+    private void drawPrism(Graphics2D g2,
+                           double cx3, double cz3,
+                           double w3, double d3,
+                           int rotDeg,
+                           double yBase, double height,
+                           Color base,
                            double cos, double sin, double scale, double cx, double cy) {
 
-        double height = guessHeight(it, r.w, r.d);
+        height = Math.max(0.1, height);
 
-        // rotated footprint corners
-        Vec3[] basePts = rotatedRectPts(r.cx, r.cz, r.w, r.d, r.rotDeg, 0);
-        Vec3[] topPts  = rotatedRectPts(r.cx, r.cz, r.w, r.d, r.rotDeg, height);
+        Vec3[] basePts = rotatedRectPts(cx3, cz3, w3, d3, rotDeg, yBase);
+        Vec3[] topPts  = rotatedRectPts(cx3, cz3, w3, d3, rotDeg, yBase + height);
 
-        // project
         Vec2[] b = projectAll(basePts, cos, sin, scale, cx, cy);
         Vec2[] t = projectAll(topPts,  cos, sin, scale, cx, cy);
 
@@ -263,7 +398,7 @@ public class Mini3DPreviewPanel extends JPanel {
         Color side2 = applyBrightness(base, 0.62);
         Color top   = applyBrightness(base, 1.05);
 
-        // sides (simple)
+        // sides
         Path2D s1 = quad(b[1], b[2], t[2], t[1]);
         Path2D s2 = quad(b[2], b[3], t[3], t[2]);
 
@@ -281,84 +416,16 @@ public class Mini3DPreviewPanel extends JPanel {
         g2.setColor(new Color(0, 0, 0, 50));
         g2.setStroke(new BasicStroke(1.0f));
         g2.draw(topFace);
-
-        // icon on top
-        drawIconOnTop(g2, it, r.cx, height, r.cz, cos, sin, scale, cx, cy, r.w, r.d);
     }
 
-    private void drawChair(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
-                           double cos, double sin, double scale, double cx, double cy) {
+    // Cylinder slab at yBase..yBase+height (for round table tops)
+    private void drawCylinderAtY(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
+                                 double yBase, double height,
+                                 double cos, double sin, double scale, double cx, double cy) {
 
-        double fullH = guessHeight(it, r.w, r.d);
-        double seatH = fullH * 0.55;
-        double backH = fullH;
+        height = Math.max(0.1, height);
 
-        // Seat: full footprint
-        RoomItem seat = new RoomItem(r.cx, r.cz, r.w, r.d, r.rotDeg);
-        drawBlock(g2, seat, it, base, cos, sin, scale, cx, cy);
-
-        // Backrest: a thinner slab at the "top" edge of chair (in local rect space)
-        // We place it along the negative-z edge in local space, then rotate.
-        double backThickness = Math.max(r.d * 0.25, 8);
-        double backDepth = backThickness;
-
-        // local offset: move towards -z by (d/2 - backDepth/2)
-        Vec2 localOffset = rotate2D(0, -(r.d / 2.0 - backDepth / 2.0), r.rotDeg);
-
-        RoomItem back = new RoomItem(
-                r.cx + localOffset.x,
-                r.cz + localOffset.y,
-                r.w,
-                backDepth,
-                r.rotDeg
-        );
-
-        // draw back with greater height (stacked)
-        drawBlockCustomHeight(g2, back, it, applyBrightness(base, 0.9), backH, cos, sin, scale, cx, cy);
-
-        // icon
-        drawIconOnTop(g2, it, r.cx, fullH, r.cz, cos, sin, scale, cx, cy, r.w, r.d);
-    }
-
-    private void drawBlockCustomHeight(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
-                                       double height,
-                                       double cos, double sin, double scale, double cx, double cy) {
-
-        Vec3[] basePts = rotatedRectPts(r.cx, r.cz, r.w, r.d, r.rotDeg, 0);
-        Vec3[] topPts  = rotatedRectPts(r.cx, r.cz, r.w, r.d, r.rotDeg, height);
-
-        Vec2[] b = projectAll(basePts, cos, sin, scale, cx, cy);
-        Vec2[] t = projectAll(topPts,  cos, sin, scale, cx, cy);
-
-        Color side1 = applyBrightness(base, 0.78);
-        Color side2 = applyBrightness(base, 0.62);
-        Color top   = applyBrightness(base, 1.05);
-
-        Path2D s1 = quad(b[1], b[2], t[2], t[1]);
-        Path2D s2 = quad(b[2], b[3], t[3], t[2]);
-
-        g2.setColor(side2);
-        g2.fill(s1);
-        g2.setColor(side1);
-        g2.fill(s2);
-
-        Path2D topFace = quad(t[0], t[1], t[2], t[3]);
-        g2.setColor(top);
-        g2.fill(topFace);
-
-        g2.setColor(new Color(0, 0, 0, 50));
-        g2.setStroke(new BasicStroke(1.0f));
-        g2.draw(topFace);
-    }
-
-    private void drawCylinder(Graphics2D g2, RoomItem r, FurnitureItem it, Color base,
-                              double cos, double sin, double scale, double cx, double cy) {
-
-        // cylinder height
-        double height = guessHeight(it, r.w, r.d);
-
-        // approximate circle with polygon points in XZ plane around center
-        int seg = 12;
+        int seg = 14;
         double radX = r.w / 2.0;
         double radZ = r.d / 2.0;
 
@@ -370,27 +437,25 @@ public class Mini3DPreviewPanel extends JPanel {
             double lx = Math.cos(a) * radX;
             double lz = Math.sin(a) * radZ;
 
-            // apply rotation in XZ plane
             Vec2 rr = rotate2D(lx, lz, r.rotDeg);
 
-            baseRing[i] = new Vec3(r.cx + rr.x, 0,      r.cz + rr.y);
-            topRing[i]  = new Vec3(r.cx + rr.x, height, r.cz + rr.y);
+            baseRing[i] = new Vec3(r.cx + rr.x, yBase,          r.cz + rr.y);
+            topRing[i]  = new Vec3(r.cx + rr.x, yBase + height, r.cz + rr.y);
         }
 
         Color side = applyBrightness(base, 0.72);
         Color top  = applyBrightness(base, 1.05);
 
-        // draw side band (only 2 faces for simple shading)
-        // face A: points 0..seg/2
+        // side band (half)
         Path2D sideA = new Path2D.Double();
-        sideA.moveTo(projectIso(baseRing[0].x, 0, baseRing[0].z, cos, sin, scale, cx, cy).x,
-                projectIso(baseRing[0].x, 0, baseRing[0].z, cos, sin, scale, cx, cy).y);
+        Vec2 s0 = projectIso(baseRing[0].x, baseRing[0].y, baseRing[0].z, cos, sin, scale, cx, cy);
+        sideA.moveTo(s0.x, s0.y);
         for (int i = 1; i <= seg / 2; i++) {
-            Vec2 p = projectIso(baseRing[i].x, 0, baseRing[i].z, cos, sin, scale, cx, cy);
+            Vec2 p = projectIso(baseRing[i].x, baseRing[i].y, baseRing[i].z, cos, sin, scale, cx, cy);
             sideA.lineTo(p.x, p.y);
         }
         for (int i = seg / 2; i >= 0; i--) {
-            Vec2 p = projectIso(topRing[i].x, height, topRing[i].z, cos, sin, scale, cx, cy);
+            Vec2 p = projectIso(topRing[i].x, topRing[i].y, topRing[i].z, cos, sin, scale, cx, cy);
             sideA.lineTo(p.x, p.y);
         }
         sideA.closePath();
@@ -398,12 +463,12 @@ public class Mini3DPreviewPanel extends JPanel {
         g2.setColor(side);
         g2.fill(sideA);
 
-        // top ring
+        // top
         Path2D topPoly = new Path2D.Double();
-        Vec2 p0 = projectIso(topRing[0].x, height, topRing[0].z, cos, sin, scale, cx, cy);
+        Vec2 p0 = projectIso(topRing[0].x, topRing[0].y, topRing[0].z, cos, sin, scale, cx, cy);
         topPoly.moveTo(p0.x, p0.y);
         for (int i = 1; i < seg; i++) {
-            Vec2 p = projectIso(topRing[i].x, height, topRing[i].z, cos, sin, scale, cx, cy);
+            Vec2 p = projectIso(topRing[i].x, topRing[i].y, topRing[i].z, cos, sin, scale, cx, cy);
             topPoly.lineTo(p.x, p.y);
         }
         topPoly.closePath();
@@ -414,8 +479,6 @@ public class Mini3DPreviewPanel extends JPanel {
         g2.setColor(new Color(0, 0, 0, 55));
         g2.setStroke(new BasicStroke(1.0f));
         g2.draw(topPoly);
-
-        drawIconOnTop(g2, it, r.cx, height, r.cz, cos, sin, scale, cx, cy, r.w, r.d);
     }
 
     private void drawIconOnTop(Graphics2D g2, FurnitureItem it,
@@ -449,7 +512,6 @@ public class Mini3DPreviewPanel extends JPanel {
             if (k != null && k.iconText != null && !k.iconText.isBlank()) return k.iconText;
         } catch (Throwable ignored) {}
 
-        // fallback
         if (kind.contains("CHAIR")) return "C";
         if (kind.contains("TABLE_ROUND")) return "●";
         if (kind.contains("TABLE")) return "T";
@@ -490,7 +552,6 @@ public class Mini3DPreviewPanel extends JPanel {
     private Vec2 projectIso(double x, double y, double z,
                             double cos, double sin, double scale,
                             double cx, double cy) {
-        // screen space: isoX = (x - z) * cos, isoY = (x + z) * sin - y
         double ix = (x - z) * cos;
         double iy = (x + z) * sin - y;
         return new Vec2(cx + ix * scale, cy + iy * scale);
@@ -509,7 +570,6 @@ public class Mini3DPreviewPanel extends JPanel {
         double pw = (it == null) ? 40 : Math.max(10, it.getW());
         double ph = (it == null) ? 40 : Math.max(10, it.getH());
 
-        // use item CENTER for placement
         double nx = ((px + pw / 2.0) - lx) / Math.max(1, lw);
         double nz = ((py + ph / 2.0) - ly) / Math.max(1, lh);
         double nw = pw / Math.max(1, lw);
@@ -547,7 +607,6 @@ public class Mini3DPreviewPanel extends JPanel {
     private Vec2 rotate2D(double x, double z, double deg) {
         double rad = Math.toRadians(deg);
         double c = Math.cos(rad), s = Math.sin(rad);
-        // rotate around origin in XZ plane
         double rx = x * c - z * s;
         double rz = x * s + z * c;
         return new Vec2(rx, rz);
@@ -555,16 +614,14 @@ public class Mini3DPreviewPanel extends JPanel {
 
     private double guessHeight(FurnitureItem it, double w, double d) {
         String kind = (it == null || it.getKind() == null) ? "" : it.getKind().toUpperCase();
-        
-        // Use a ratio of the footprint to guess height.
-        // For furniture in room-unit coordinates, a fixed minimum like 22 is way too tall
-        // if 1.0 = 1 meter or 1 foot.
+
+        // height proportional to footprint for "room units"
         double base = Math.max(w, d) * 0.45;
-        
-        if (kind.contains("CHAIR")) return base * 0.95; 
+
+        if (kind.contains("CHAIR")) return base * 0.95;
         if (kind.contains("TABLE")) return base * 0.70;
         if (kind.contains("SOFA"))  return base * 0.85;
-        
+
         return base;
     }
 
@@ -573,6 +630,8 @@ public class Mini3DPreviewPanel extends JPanel {
     private String safe(String s) { return (s == null) ? "" : s; }
 
     private int clamp(int v, int a, int b) { return Math.max(a, Math.min(b, v)); }
+
+    private double clampD(double v, double a, double b) { return Math.max(a, Math.min(b, v)); }
 
     private Color parseHex(String hex, Color fallback) {
         try {

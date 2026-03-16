@@ -85,10 +85,16 @@ public class NewDesignWizardPage extends JPanel {
         setLayout(new BorderLayout());
         setOpaque(false);
 
+        // Centered container to limit width for responsiveness
+        JPanel formCenterWrap = new JPanel(new GridBagLayout());
+        formCenterWrap.setOpaque(false);
+
         JPanel page = new JPanel();
         page.setOpaque(false);
         page.setLayout(new BoxLayout(page, BoxLayout.Y_AXIS));
         page.setBorder(new EmptyBorder(18, 24, 18, 24));
+        page.setPreferredSize(new Dimension(800, 700));
+        page.setMaximumSize(new Dimension(800, Integer.MAX_VALUE));
 
         page.add(topHeader(frame, router));
         page.add(Box.createVerticalStrut(14));
@@ -101,7 +107,9 @@ public class NewDesignWizardPage extends JPanel {
 
         page.add(bottomNav(router));
 
-        JScrollPane scroller = new JScrollPane(page);
+        formCenterWrap.add(page, new GridBagConstraints());
+
+        JScrollPane scroller = new JScrollPane(formCenterWrap);
         scroller.setBorder(BorderFactory.createEmptyBorder());
         scroller.getViewport().setOpaque(true);
         scroller.getViewport().setBackground(UiKit.BG);
@@ -210,11 +218,11 @@ public class NewDesignWizardPage extends JPanel {
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
 
         stepTitle.setForeground(UiKit.TEXT);
-        stepTitle.setFont(UiKit.scaled(stepTitle, Font.BOLD, 1.20f));
+        stepTitle.setFont(UiKit.scaled(stepTitle, Font.BOLD, 1.30f));
 
         stepSubtitle.setForeground(subMuted());
-        stepSubtitle.setFont(UiKit.scaled(stepSubtitle, Font.PLAIN, 0.98f));
-        stepSubtitle.setBorder(new EmptyBorder(6, 0, 0, 0));
+        stepSubtitle.setFont(UiKit.scaled(stepSubtitle, Font.PLAIN, 1.00f));
+        stepSubtitle.setBorder(new EmptyBorder(8, 0, 0, 0));
 
         header.add(stepTitle);
         header.add(stepSubtitle);
@@ -227,7 +235,7 @@ public class NewDesignWizardPage extends JPanel {
 
         JPanel body = new JPanel(new BorderLayout());
         body.setOpaque(false);
-        body.setBorder(new EmptyBorder(14, 0, 0, 0));
+        body.setBorder(new EmptyBorder(24, 0, 0, 0));
         body.add(formHost, BorderLayout.CENTER);
 
         card.add(header, BorderLayout.NORTH);
@@ -272,13 +280,13 @@ public class NewDesignWizardPage extends JPanel {
     private JComponent step1Panel() {
         JPanel p = formStack();
 
-        p.add(fieldBlock("Design Name *", hint(PH_DESIGN, designName)));
+        p.add(fieldBlock("🏷️ Design Name *", hint(PH_DESIGN, designName)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(fieldBlock("Customer Name *", hint(PH_CUSTOMER, customerName)));
+        p.add(fieldBlock("👤 Customer Name *", hint(PH_CUSTOMER, customerName)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(textAreaBlock("Project Notes (Optional)", PH_NOTES, notes));
+        p.add(textAreaBlock("📝 Project Notes", PH_NOTES, notes));
 
         return p;
     }
@@ -286,24 +294,14 @@ public class NewDesignWizardPage extends JPanel {
     private JComponent step2Panel() {
         JPanel p = formStack();
 
-        JPanel row = new JPanel(new GridLayout(1, 3, 12, 0));
-        row.setOpaque(false);
+        p.add(fieldBlock("📏 Room Width *", hint(PH_WIDTH, roomWidth)));
+        p.add(Box.createVerticalStrut(12));
 
-        row.add(fieldBlock("Room Width *", hint(PH_WIDTH, roomWidth)));
-        row.add(fieldBlock("Room Length *", hint(PH_LENGTH, roomLength)));
+        p.add(fieldBlock("📐 Room Length *", hint(PH_LENGTH, roomLength)));
+        p.add(Box.createVerticalStrut(12));
 
-        JPanel unitWrap = new JPanel();
-        unitWrap.setOpaque(false);
-        unitWrap.setLayout(new BoxLayout(unitWrap, BoxLayout.Y_AXIS));
-        unitWrap.add(label("Units *"));
-        unitWrap.add(Box.createVerticalStrut(6));
-        UiKit.styleDropdown(unit);
-        unitWrap.add(unit);
-
-        row.add(unitWrap);
-
-        p.add(row);
-        p.add(Box.createVerticalStrut(10));
+        p.add(dropdownBlock("⚖️ Units *", unit));
+        p.add(Box.createVerticalStrut(18));
 
         JLabel info = new JLabel("Tip: Use the same units you will use in the 2D Planner.");
         info.setForeground(subMuted());
@@ -317,8 +315,8 @@ public class NewDesignWizardPage extends JPanel {
         JPanel p = formStack();
 
         UiKit.styleDropdown(roomShape);
-        p.add(dropdownBlock("Room Shape *", roomShape));
-        p.add(Box.createVerticalStrut(12));
+        p.add(dropdownBlock("💠 Room Shape *", roomShape));
+        p.add(Box.createVerticalStrut(20));
 
         // --- L-shape dimensions block (shown only if L-Shape selected) ---
         lShapeDimsWrap.setOpaque(false);
@@ -359,26 +357,8 @@ public class NewDesignWizardPage extends JPanel {
         JPanel p = formStack();
 
         UiKit.styleDropdown(colorScheme);
-        p.add(dropdownBlock("Color Scheme *", colorScheme));
-        p.add(Box.createVerticalStrut(12));
-
-        JPanel palettes = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        palettes.setOpaque(false);
-
-        // These are decorative; keep colors but make borders HC-friendly
-        palettes.add(colorDot(new Color(0x111827)));
-        palettes.add(colorDot(new Color(0xF5F3FF)));
-        palettes.add(colorDot(new Color(0xEDE9FE)));
-        palettes.add(colorDot(new Color(0xF3F4F6)));
-        palettes.add(colorDot(new Color(0xD1D5DB)));
-
-        JLabel prev = new JLabel("Preview");
-        prev.setForeground(UiKit.TEXT);
-        prev.setFont(UiKit.scaled(prev, Font.BOLD, 1.00f));
-
-        p.add(prev);
-        p.add(Box.createVerticalStrut(8));
-        p.add(palettes);
+        p.add(dropdownBlock("🎨 Color Scheme *", colorScheme));
+        p.add(Box.createVerticalStrut(20));
 
         return p;
     }
@@ -391,6 +371,15 @@ public class NewDesignWizardPage extends JPanel {
 
         currentStep = step;
         stepper.setActive(step);
+
+        if (nextBtn instanceof UiKit.RoundButton) {
+            UiKit.RoundButton rb = (UiKit.RoundButton) nextBtn;
+            if (step == 4) {
+                rb.setGradient(new Color(0x6366F1), new Color(0x4338CA));
+            } else {
+                rb.setGradient(null, null); // Reset to primary colors
+            }
+        }
 
         switch (step) {
             case 1 -> {
@@ -677,32 +666,54 @@ public class NewDesignWizardPage extends JPanel {
         return field;
     }
 
-    private JComponent fieldBlock(String label, JComponent field) {
-        JPanel b = new JPanel();
+    private JComponent fieldBlock(String labelStr, JComponent field) {
+        JPanel b = new JPanel(new GridBagLayout());
         b.setOpaque(false);
-        b.setLayout(new BoxLayout(b, BoxLayout.Y_AXIS));
-        b.add(label(label));
-        b.add(Box.createVerticalStrut(6));
-        b.add(field);
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 16);
+        
+        JLabel l = label(labelStr);
+        l.setPreferredSize(new Dimension(160, 20));
+        l.setMinimumSize(new Dimension(160, 20));
+        
+        gbc.weightx = 0;
+        b.add(l, gbc);
+        
+        gbc.weightx = 1.0;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        b.add(field, gbc);
+        
         return b;
     }
 
-    private JComponent dropdownBlock(String label, JComponent dropdown) {
-        JPanel b = new JPanel();
-        b.setOpaque(false);
-        b.setLayout(new BoxLayout(b, BoxLayout.Y_AXIS));
-        b.add(label(label));
-        b.add(Box.createVerticalStrut(6));
-        b.add(dropdown);
-        return b;
+    private JComponent dropdownBlock(String labelStr, JComponent dropdown) {
+        UiKit.styleDropdown((JComboBox<?>) dropdown);
+        return fieldBlock(labelStr, dropdown);
     }
 
-    private JComponent textAreaBlock(String label, String placeholder, JTextArea area) {
-        JPanel b = new JPanel();
+    private JComponent textAreaBlock(String labelStr, String placeholder, JTextArea area) {
+        JPanel b = new JPanel(new GridBagLayout());
         b.setOpaque(false);
-        b.setLayout(new BoxLayout(b, BoxLayout.Y_AXIS));
-        b.add(label(label));
-        b.add(Box.createVerticalStrut(6));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.insets = new Insets(8, 0, 0, 16);
+
+        JLabel l = label(labelStr);
+        l.setPreferredSize(new Dimension(160, 20));
+        l.setMinimumSize(new Dimension(160, 20));
+
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        b.add(l, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 0, 0);
 
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
@@ -711,10 +722,16 @@ public class NewDesignWizardPage extends JPanel {
         area.setForeground(UiKit.TEXT);
         area.setBackground(UiKit.WHITE);
         area.setCaretColor(UiKit.TEXT);
+        area.setOpaque(true);
 
         JScrollPane sp = new JScrollPane(area);
         sp.setBorder(new LineBorder(UiKit.BORDER, 1, true));
-        sp.setPreferredSize(new Dimension(0, 120));
+        sp.setPreferredSize(new Dimension(200, 100));
+        sp.setMinimumSize(new Dimension(200, 100));
+        sp.setOpaque(true);
+        sp.setBackground(UiKit.WHITE);
+
+        b.add(sp, gbc);
 
         area.setText(placeholder);
         area.setForeground(placeholderColor());
@@ -732,14 +749,6 @@ public class NewDesignWizardPage extends JPanel {
                 }
             }
         });
-
-        b.add(sp);
-
-        JLabel helper = new JLabel("Optional: Add special requirements, preferences, or important details");
-        helper.setForeground(subMuted());
-        helper.setFont(UiKit.scaled(helper, Font.PLAIN, 0.88f));
-        helper.setBorder(new EmptyBorder(6, 0, 0, 0));
-        b.add(helper);
 
         return b;
     }
@@ -782,12 +791,6 @@ public class NewDesignWizardPage extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
-    private JComponent colorDot(Color c) {
-        UiKit.RoundedPanel dot = new UiKit.RoundedPanel(999, c);
-        dot.setPreferredSize(new Dimension(18, 18));
-        dot.setBorderPaint(isHighContrast() ? UiKit.BORDER : new Color(0xE5E7EB));
-        return dot;
-    }
 
     /* ========================= Stepper ========================= */
 
@@ -808,43 +811,56 @@ public class NewDesignWizardPage extends JPanel {
         private void rebuild() {
             removeAll();
             add(stepItem(1, "Design Info"));
+            add(line(1));
             add(stepItem(2, "Dimensions"));
+            add(line(2));
             add(stepItem(3, "Room Shape"));
+            add(line(3));
             add(stepItem(4, "Color Scheme"));
             revalidate();
             repaint();
         }
 
+        private JComponent line(int afterStep) {
+            JPanel p = new JPanel(new GridBagLayout());
+            p.setOpaque(false);
+            
+            boolean isPassed = afterStep < this.active;
+            Color c = isPassed ? UiKit.PRIMARY : (isHighContrast() ? UiKit.BORDER : new Color(0xE5E7EB));
+            
+            JPanel line = new JPanel();
+            line.setBackground(c);
+            line.setPreferredSize(new Dimension(40, 2));
+            
+            p.add(line);
+            return p;
+        }
+
         private JComponent stepItem(int number, String label) {
-            JPanel p = new JPanel(new BorderLayout(10, 0));
+            JPanel p = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
             p.setOpaque(false);
 
             boolean done = number < active;
             boolean isActive = number == active;
 
-            Color inactiveFill = isHighContrast() ? UiKit.WHITE : new Color(0xE5E7EB);
-            Color circleFill = isActive ? UiKit.PRIMARY : inactiveFill;
+            Color circleFill = isActive ? UiKit.PRIMARY : (done ? UiKit.PRIMARY_DARK : (isHighContrast() ? UiKit.WHITE : new Color(0xF3F4F6)));
 
             UiKit.RoundedPanel circle = new UiKit.RoundedPanel(999, circleFill);
-            circle.setBorderPaint(isHighContrast() ? UiKit.BORDER : null);
-            circle.setPreferredSize(new Dimension(28, 28));
+            circle.setBorderPaint(isHighContrast() ? UiKit.BORDER : (isActive ? UiKit.PRIMARY : null));
+            circle.setPreferredSize(new Dimension(30, 30));
             circle.setLayout(new GridBagLayout());
 
             JLabel n = new JLabel(done ? "✓" : String.valueOf(number));
-            n.setForeground(isActive ? Color.WHITE : (isHighContrast() ? UiKit.TEXT : new Color(0x6B7280)));
+            n.setForeground((isActive || done) ? Color.WHITE : (isHighContrast() ? UiKit.TEXT : new Color(0x6B7280)));
             n.setFont(UiKit.scaled(n, Font.BOLD, 0.95f));
             circle.add(n);
 
             JLabel t = new JLabel(label);
-            t.setForeground(isActive ? UiKit.TEXT : subMuted());
+            t.setForeground(isActive ? UiKit.TEXT : (done ? UiKit.PRIMARY_DARK : subMuted()));
             t.setFont(UiKit.scaled(t, isActive ? Font.BOLD : Font.PLAIN, 0.95f));
 
-            JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-            left.setOpaque(false);
-            left.add(circle);
-
-            p.add(left, BorderLayout.WEST);
-            p.add(t, BorderLayout.CENTER);
+            p.add(circle);
+            p.add(t);
 
             return p;
         }

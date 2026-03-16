@@ -58,6 +58,7 @@ public class SettingsPage extends JPanel {
             "Small", "Medium", "Large"
     });
     private final JToggleButton highContrastToggle = new JToggleButton();
+    private final JLabel lastSavedLabel = new JLabel(" ");
 
     public SettingsPage(AppFrame frame, Router outerRouter, AppState appState, SettingsRepository settingsRepo, Runnable onSaved) {
         this.frame = frame;
@@ -74,46 +75,41 @@ public class SettingsPage extends JPanel {
         JPanel header = buildHeader();
         add(header, BorderLayout.NORTH);
 
-        // Two-column content
-        JPanel content = new JPanel(new GridBagLayout());
-        content.setOpaque(false);
+        // Centered Single-Column Content
+        JPanel scrollContent = new JPanel(new GridBagLayout());
+        scrollContent.setOpaque(false);
 
         GridBagConstraints gc = new GridBagConstraints();
         gc.gridx = 0;
         gc.gridy = 0;
         gc.weightx = 1;
-        gc.weighty = 1;
-        gc.fill = GridBagConstraints.BOTH;
-        gc.insets = new Insets(12, 0, 12, 12);
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        gc.anchor = GridBagConstraints.NORTH;
+        gc.insets = new Insets(20, 0, 40, 0);
 
-        JPanel leftCol = new JPanel();
-        leftCol.setOpaque(false);
-        leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
-        leftCol.add(profileCard());
-        leftCol.add(Box.createVerticalStrut(14));
-        leftCol.add(passwordCard());
-        leftCol.add(Box.createVerticalStrut(14));
-        leftCol.add(preferencesCard());
+        JPanel mainCol = new JPanel();
+        mainCol.setOpaque(false);
+        mainCol.setLayout(new BoxLayout(mainCol, BoxLayout.Y_AXIS));
+        mainCol.setMaximumSize(new Dimension(800, 9999));
+        mainCol.setPreferredSize(new Dimension(800, 1200));
 
-        content.add(leftCol, gc);
+        mainCol.add(profileCard());
+        mainCol.add(Box.createVerticalStrut(20));
+        mainCol.add(passwordCard());
+        mainCol.add(Box.createVerticalStrut(20));
+        mainCol.add(preferencesCard());
+        mainCol.add(Box.createVerticalStrut(20));
+        mainCol.add(accessibilityCard());
+        mainCol.add(Box.createVerticalStrut(20));
+        mainCol.add(helpSupportCard());
+        mainCol.add(Box.createVerticalStrut(20));
+        mainCol.add(accountCard());
 
-        gc.gridx = 1;
-        gc.insets = new Insets(12, 12, 12, 0);
+        scrollContent.add(mainCol, gc);
 
-        JPanel rightCol = new JPanel();
-        rightCol.setOpaque(false);
-        rightCol.setLayout(new BoxLayout(rightCol, BoxLayout.Y_AXIS));
-        rightCol.add(accessibilityCard());
-        rightCol.add(Box.createVerticalStrut(14));
-        rightCol.add(helpSupportCard());
-        rightCol.add(Box.createVerticalStrut(14));
-        rightCol.add(accountCard());
-
-        content.add(rightCol, gc);
-
-        JScrollPane sc = new JScrollPane(content);
+        JScrollPane sc = new JScrollPane(scrollContent);
         sc.setBorder(BorderFactory.createEmptyBorder());
-        sc.getVerticalScrollBar().setUnitIncrement(14);
+        sc.getVerticalScrollBar().setUnitIncrement(16);
         sc.getViewport().setOpaque(false);
         sc.setOpaque(false);
 
@@ -140,11 +136,13 @@ public class SettingsPage extends JPanel {
         JLabel title = new JLabel("Settings");
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.35f));
         title.setForeground(UiKit.TEXT);
+        title.setAlignmentX(0.0f);
 
         JLabel sub = new JLabel("Manage your account and application preferences");
         sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.98f));
         sub.setForeground(UiKit.MUTED);
         sub.setBorder(new EmptyBorder(6, 0, 0, 0));
+        sub.setAlignmentX(0.0f);
 
         h.add(title);
         h.add(sub);
@@ -156,13 +154,13 @@ public class SettingsPage extends JPanel {
     private JComponent profileCard() {
         UiKit.RoundedPanel card = cardBase();
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("Profile Information", "Manage your personal details"), BorderLayout.NORTH);
+        card.add(cardTitle("👤", "Profile Information", "Manage your personal details"), BorderLayout.NORTH);
 
-        JPanel form = new JPanel(new GridLayout(2, 2, 14, 12));
+        JPanel form = new JPanel(new GridLayout(2, 2, 16, 16));
         form.setOpaque(false);
-        form.setBorder(new EmptyBorder(12, 0, 0, 0));
+        form.setBorder(new EmptyBorder(16, 0, 0, 0));
 
         form.add(labeledField("Full Name", fullName));
         form.add(labeledField("Email Address", email));
@@ -176,21 +174,21 @@ public class SettingsPage extends JPanel {
     private JComponent passwordCard() {
         UiKit.RoundedPanel card = cardBase();
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("Change Password", null), BorderLayout.NORTH);
+        card.add(cardTitle("🔒", "Change Password", "Secure your account"), BorderLayout.NORTH);
 
         JPanel form = new JPanel();
         form.setOpaque(false);
         form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
-        form.setBorder(new EmptyBorder(12, 0, 0, 0));
+        form.setBorder(new EmptyBorder(16, 0, 0, 0));
 
         form.add(labeledPassword("Current Password", currentPw));
-        form.add(Box.createVerticalStrut(12));
+        form.add(Box.createVerticalStrut(14));
         form.add(labeledPassword("New Password", newPw));
-        form.add(Box.createVerticalStrut(12));
+        form.add(Box.createVerticalStrut(14));
         form.add(labeledPassword("Confirm New Password", confirmPw));
-        form.add(Box.createVerticalStrut(8));
+        form.add(Box.createVerticalStrut(10));
 
         pwError.setFont(UiKit.scaled(pwError, Font.PLAIN, 0.88f));
         pwError.setForeground(UiKit.DANGER);
@@ -203,30 +201,35 @@ public class SettingsPage extends JPanel {
     private JComponent preferencesCard() {
         UiKit.RoundedPanel card = cardBase();
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("Application Preferences", null), BorderLayout.NORTH);
+        card.add(cardTitle("🛠️", "Application Preferences", "Adjust your design experience"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(12, 0, 0, 0));
+        body.setBorder(new EmptyBorder(16, 0, 0, 0));
 
         // Autosave row
-        JPanel autosaveRow = new JPanel(new BorderLayout(10, 0));
+        JPanel autosaveRow = new JPanel(new BorderLayout(14, 0));
         autosaveRow.setOpaque(false);
+        autosaveRow.setAlignmentX(0.0f);
+        autosaveRow.setMaximumSize(new Dimension(800, 50));
 
         JPanel text = new JPanel();
         text.setOpaque(false);
         text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        text.setAlignmentX(0.0f);
 
         JLabel a1 = new JLabel("Autosave");
         a1.setFont(UiKit.scaled(a1, Font.BOLD, 1.00f));
         a1.setForeground(UiKit.TEXT);
+        a1.setAlignmentX(0.0f);
 
         JLabel a2 = new JLabel("Automatically save your work while editing designs");
         a2.setFont(UiKit.scaled(a2, Font.PLAIN, 0.90f));
         a2.setForeground(UiKit.MUTED);
+        a2.setAlignmentX(0.0f);
 
         text.add(a1);
         text.add(Box.createVerticalStrut(3));
@@ -236,10 +239,25 @@ public class SettingsPage extends JPanel {
         autosaveRow.add(autosaveToggle, BorderLayout.EAST);
 
         body.add(autosaveRow);
-        body.add(Box.createVerticalStrut(14));
+        body.add(Box.createVerticalStrut(18));
 
         // Units dropdown
         body.add(labeledDropdown("Default Units", defaultUnits));
+        body.add(Box.createVerticalStrut(18));
+
+        JButton resetBtn = UiKit.ghostButton("Reset to Defaults");
+        resetBtn.addActionListener(e -> {
+            int ok = JOptionPane.showConfirmDialog(this, "Reset all settings to defaults?", "Reset", JOptionPane.OK_CANCEL_OPTION);
+            if (ok == JOptionPane.OK_OPTION) {
+                applyToUi(UserSettings.defaults());
+            }
+        });
+        JPanel btnWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        btnWrap.setOpaque(false);
+        btnWrap.setAlignmentX(0.0f);
+        btnWrap.setMaximumSize(new Dimension(800, 40));
+        btnWrap.add(resetBtn);
+        body.add(btnWrap);
 
         card.add(body, BorderLayout.CENTER);
         return card;
@@ -248,32 +266,37 @@ public class SettingsPage extends JPanel {
     private JComponent accessibilityCard() {
         UiKit.RoundedPanel card = cardBase();
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("Accessibility", null), BorderLayout.NORTH);
+        card.add(cardTitle("👁️", "Accessibility", "Tailor the interface to your needs"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(12, 0, 0, 0));
+        body.setBorder(new EmptyBorder(16, 0, 0, 0));
 
         body.add(labeledDropdown("Font Size", fontSize));
-        body.add(Box.createVerticalStrut(14));
+        body.add(Box.createVerticalStrut(18));
 
-        JPanel hcRow = new JPanel(new BorderLayout(10, 0));
+        JPanel hcRow = new JPanel(new BorderLayout(14, 0));
         hcRow.setOpaque(false);
+        hcRow.setAlignmentX(0.0f);
+        hcRow.setMaximumSize(new Dimension(800, 50));
 
         JPanel text = new JPanel();
         text.setOpaque(false);
         text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        text.setAlignmentX(0.0f);
 
         JLabel t1 = new JLabel("High Contrast");
         t1.setFont(UiKit.scaled(t1, Font.BOLD, 1.00f));
         t1.setForeground(UiKit.TEXT);
+        t1.setAlignmentX(0.0f);
 
         JLabel t2 = new JLabel("Increase contrast for better visibility");
         t2.setFont(UiKit.scaled(t2, Font.PLAIN, 0.90f));
         t2.setForeground(UiKit.MUTED);
+        t2.setAlignmentX(0.0f);
 
         text.add(t1);
         text.add(Box.createVerticalStrut(3));
@@ -291,21 +314,21 @@ public class SettingsPage extends JPanel {
     private JComponent helpSupportCard() {
         UiKit.RoundedPanel card = cardBase();
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("Help & Support", null), BorderLayout.NORTH);
+        card.add(cardTitle("❓", "Help & Support", "Get assistance or read docs"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(12, 0, 0, 0));
+        body.setBorder(new EmptyBorder(16, 0, 0, 0));
 
         body.add(linkRow("Documentation", this::showDocs));
-        body.add(Box.createVerticalStrut(10));
+        body.add(Box.createVerticalStrut(12));
         body.add(linkRow("Contact Support", this::showSupport));
-        body.add(Box.createVerticalStrut(10));
+        body.add(Box.createVerticalStrut(12));
         body.add(linkRow("Keyboard Shortcuts", this::showShortcuts));
-        body.add(Box.createVerticalStrut(10));
+        body.add(Box.createVerticalStrut(12));
         body.add(linkRow("Report a Bug", this::showBugReport));
 
         card.add(body, BorderLayout.CENTER);
@@ -315,24 +338,25 @@ public class SettingsPage extends JPanel {
     private JComponent accountCard() {
         UiKit.RoundedPanel card = cardBase();
         card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        card.add(cardTitle("Account", null), BorderLayout.NORTH);
+        card.add(cardTitle("⚙️", "Account", "Manage your data and privacy"), BorderLayout.NORTH);
 
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-        body.setBorder(new EmptyBorder(12, 0, 0, 0));
+        body.setBorder(new EmptyBorder(16, 0, 0, 0));
 
         body.add(linkRow("Export Data", this::onExportData));
-        body.add(Box.createVerticalStrut(10));
+        body.add(Box.createVerticalStrut(12));
         body.add(linkRow("Privacy Settings", this::showPrivacy));
-        body.add(Box.createVerticalStrut(10));
+        body.add(Box.createVerticalStrut(12));
 
         JLabel delete = new JLabel("Delete Account");
         delete.setForeground(UiKit.DANGER);
-        delete.setFont(UiKit.scaled(delete, Font.PLAIN, 0.98f));
+        delete.setFont(UiKit.scaled(delete, Font.BOLD, 0.98f));
         delete.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        delete.setAlignmentX(0.0f);
         delete.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override public void mouseClicked(java.awt.event.MouseEvent e) {
                 onDeleteAccount();
@@ -366,6 +390,10 @@ public class SettingsPage extends JPanel {
 
         right.add(cancel);
         right.add(save);
+
+        lastSavedLabel.setFont(UiKit.scaled(lastSavedLabel, Font.PLAIN, 0.85f));
+        lastSavedLabel.setForeground(UiKit.MUTED);
+        footer.add(lastSavedLabel, BorderLayout.WEST);
 
         footer.add(right, BorderLayout.EAST);
         return footer;
@@ -457,6 +485,10 @@ public class SettingsPage extends JPanel {
 
         settingsRepo.save(s);
 
+        // Update last saved
+        java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+        lastSavedLabel.setText("Last saved: " + java.time.LocalTime.now().format(dtf));
+
         // ✅ notify shell + apply global UI refresh
         if (onSaved != null) onSaved.run();
         SwingUtilities.invokeLater(() -> {
@@ -471,19 +503,6 @@ public class SettingsPage extends JPanel {
         currentPw.setText("");
         newPw.setText("");
         confirmPw.setText("");
-
-        JOptionPane.showMessageDialog(
-                this,
-                "Settings saved ✅\n\n" +
-                        "Name: " + s.getFullName() + "\n" +
-                        "Email: " + s.getEmail() + "\n" +
-                        "Autosave: " + (s.isAutosaveEnabled() ? "On" : "Off") + "\n" +
-                        "Default Units: " + unitCodeToLabel(s.getDefaultUnit()) + "\n" +
-                        "Font Size: " + s.getFontSize() + "\n" +
-                        "High Contrast: " + (s.isHighContrast() ? "On" : "Off"),
-                "Settings",
-                JOptionPane.INFORMATION_MESSAGE
-        );
     }
 
     private void onExportData() {
@@ -656,38 +675,55 @@ public class SettingsPage extends JPanel {
         return card;
     }
 
-    private JComponent cardTitle(String title, String subtitle) {
-        JPanel p = new JPanel();
-        p.setOpaque(false);
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+    private JComponent cardTitle(String icon, String title, String subtitle) {
+        JPanel wrapper = new JPanel(new BorderLayout(14, 0));
+        wrapper.setOpaque(false);
+        wrapper.setAlignmentX(0.0f);
+
+        JLabel iconLbl = new JLabel(icon);
+        iconLbl.setFont(UiKit.scaled(iconLbl, Font.PLAIN, 1.4f));
+        iconLbl.setForeground(UiKit.PRIMARY);
+
+        JPanel text = new JPanel();
+        text.setOpaque(false);
+        text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+        text.setAlignmentX(0.0f);
 
         JLabel t = new JLabel(title);
-        t.setFont(UiKit.scaled(t, Font.BOLD, 1.02f));
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.05f));
         t.setForeground(UiKit.TEXT);
-        p.add(t);
+        t.setAlignmentX(0.0f);
+        text.add(t);
 
         if (subtitle != null && !subtitle.isBlank()) {
             JLabel s = new JLabel(subtitle);
             s.setFont(UiKit.scaled(s, Font.PLAIN, 0.88f));
             s.setForeground(UiKit.MUTED);
-            s.setBorder(new EmptyBorder(4, 0, 0, 0));
-            p.add(s);
+            s.setBorder(new EmptyBorder(2, 0, 0, 0));
+            s.setAlignmentX(0.0f);
+            text.add(s);
         }
 
-        return p;
+        wrapper.add(iconLbl, BorderLayout.WEST);
+        wrapper.add(text, BorderLayout.CENTER);
+
+        return wrapper;
     }
 
     private JComponent labeledField(String label, JTextField field) {
         JPanel p = new JPanel();
         p.setOpaque(false);
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+        p.setAlignmentX(0.0f);
 
         JLabel l = new JLabel(label);
         l.setFont(UiKit.scaled(l, Font.PLAIN, 0.88f));
         l.setForeground(UiKit.MUTED);
+        l.setAlignmentX(0.0f);
 
         p.add(l);
         p.add(Box.createVerticalStrut(6));
+        field.setAlignmentX(0.0f);
         p.add(field);
         return p;
     }
@@ -696,13 +732,16 @@ public class SettingsPage extends JPanel {
         JPanel p = new JPanel();
         p.setOpaque(false);
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+        p.setAlignmentX(0.0f);
 
         JLabel l = new JLabel(label);
         l.setFont(UiKit.scaled(l, Font.PLAIN, 0.88f));
         l.setForeground(UiKit.MUTED);
+        l.setAlignmentX(0.0f);
 
         p.add(l);
         p.add(Box.createVerticalStrut(6));
+        field.setAlignmentX(0.0f);
         p.add(field);
         return p;
     }
@@ -715,6 +754,7 @@ public class SettingsPage extends JPanel {
         JLabel l = new JLabel(label);
         l.setFont(UiKit.scaled(l, Font.PLAIN, 0.88f));
         l.setForeground(UiKit.MUTED);
+        l.setAlignmentX(0.0f);
 
         combo.setFont(UiKit.scaled(combo, Font.PLAIN, 1.00f));
         combo.setForeground(UiKit.TEXT);
@@ -723,6 +763,7 @@ public class SettingsPage extends JPanel {
                 new LineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(7, 10, 7, 10)
         ));
+        combo.setAlignmentX(0.0f);
 
         p.add(l);
         p.add(Box.createVerticalStrut(6));
@@ -733,6 +774,8 @@ public class SettingsPage extends JPanel {
     private JComponent linkRow(String text, Runnable onClick) {
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(false);
+        row.setAlignmentX(0.0f);
+        row.setMaximumSize(new Dimension(800, 30));
 
         JLabel l = new JLabel(text);
         l.setFont(UiKit.scaled(l, Font.PLAIN, 0.98f));
@@ -770,11 +813,19 @@ public class SettingsPage extends JPanel {
         if (b.isSelected()) {
             b.setBackground(UiKit.PRIMARY);
             b.setForeground(Color.WHITE);
-            b.setText("ON");
+            b.setText("  ON  ");
+            b.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(UiKit.PRIMARY.darker(), 1, true),
+                new EmptyBorder(4, 10, 4, 10)
+            ));
         } else {
             b.setBackground(new Color(0xE5E7EB));
             b.setForeground(new Color(0x374151));
-            b.setText("OFF");
+            b.setText("  OFF  ");
+            b.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(new Color(0xD1D5DB), 1, true),
+                new EmptyBorder(4, 10, 4, 10)
+            ));
         }
     }
 

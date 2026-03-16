@@ -14,6 +14,8 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.lang.reflect.Method;
@@ -23,6 +25,9 @@ import java.util.List;
 import java.util.Locale;
 
 public class DesignLibraryPage extends JPanel {
+    private static final int GRID_GAP = 16;
+    private static final int CARD_MIN_WIDTH = 270;
+    private static final int PAGE_MAX_WIDTH = 1200;
 
     private final Router router;
     private final AppState appState;
@@ -42,6 +47,9 @@ public class DesignLibraryPage extends JPanel {
     private JButton listBtn;
     private boolean gridMode = true;
 
+    // ✅ Track filter state to avoid redundant/destructive refreshes
+    private String lastAppliedFilterState = "";
+
     private static final String SEARCH_PLACEHOLDER = "Search designs by name, customer, or tags...";
 
     // ✅ keep existing constructor (fallback)
@@ -57,24 +65,54 @@ public class DesignLibraryPage extends JPanel {
         setLayout(new BorderLayout());
         setOpaque(false);
 
-        JPanel content = new JPanel();
+        ScrollablePanel content = new ScrollablePanel();
         content.setOpaque(false);
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setLayout(new GridBagLayout()); // Use GridBagLayout for flexible centering
         content.setBorder(new EmptyBorder(22, 24, 22, 24));
 
-        content.add(headerRow());
-        content.add(Box.createVerticalStrut(14));
-        content.add(searchFilterCard(frame));
-        content.add(Box.createVerticalStrut(16));
-        content.add(metaRow(frame));
-        content.add(Box.createVerticalStrut(12));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.NORTH;
+        gbc.insets = new Insets(0, 0, 0, 0);
+
+        // Inner column that can scale up/down with the window.
+        JPanel column = new JPanel();
+        column.setOpaque(false);
+        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
+        column.setMaximumSize(new Dimension(PAGE_MAX_WIDTH, Integer.MAX_VALUE));
+
+        column.add(headerRow());
+        column.add(vSpace(28));
+        column.add(searchFilterCard(frame));
+        column.add(vSpace(32));
+        column.add(metaRow(frame));
+        column.add(vSpace(14));
 
         // dynamic designs grid
         gridHost = new JPanel(new BorderLayout());
         gridHost.setOpaque(false);
-        content.add(gridHost);
+        column.add(gridHost);
 
-        content.add(Box.createVerticalStrut(18));
+        // Add resize listener for responsive grid columns
+        gridHost.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                refreshGrid(frame);
+            }
+        });
+
+        column.add(vSpace(40));
+
+        // Wrapper keeps content centered while allowing wider screens to use space.
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.setMaximumSize(new Dimension(PAGE_MAX_WIDTH, Integer.MAX_VALUE));
+        wrapper.add(column, BorderLayout.CENTER);
+
+        content.add(wrapper, gbc);
 
         JScrollPane scroller = new JScrollPane(content);
         scroller.setBorder(BorderFactory.createEmptyBorder());
@@ -84,6 +122,13 @@ public class DesignLibraryPage extends JPanel {
         scroller.getVerticalScrollBar().setUnitIncrement(18);
 
         add(scroller, BorderLayout.CENTER);
+
+        // ✅ IMPORTANT: Refresh when this screen is shown (fixes sync issue if items were deleted elsewhere)
+        router.addListener(key -> {
+            if (ScreenKeys.DESIGN_LIBRARY.equals(key)) {
+                refreshGrid(frame);
+            }
+        });
 
         refreshGrid(frame);
     }
@@ -97,127 +142,131 @@ public class DesignLibraryPage extends JPanel {
         return isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF);
     }
 
-    private Color hoverFill() {
-        // card hover background
-        return isHighContrast() ? UiKit.WHITE : new Color(0xFAFAFB);
-    }
-
-    private Color imagePlaceholderFill() {
-        // image block background
-        return isHighContrast() ? UiKit.WHITE : new Color(0xE5E7EB);
-    }
-
     private JComponent headerRow() {
-        JPanel row = new JPanel(new BorderLayout());
-        row.setOpaque(false);
+        JPanel p = new JPanel();
+        p.setOpaque(false);
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
-        JPanel left = new JPanel();
-        left.setOpaque(false);
-        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
+        JLabel h1 = new JLabel("Design Library", SwingConstants.CENTER);
+        h1.setForeground(UiKit.TEXT);
+        h1.setFont(UiKit.scaled(h1, Font.BOLD, 1.85f));
+        h1.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel title = new JLabel("Design Library");
-        title.setForeground(UiKit.TEXT);
-        title.setFont(UiKit.scaled(title, Font.BOLD, 1.45f));
-
-        JLabel sub = new JLabel("Manage and organize your saved room designs");
+        JLabel sub = new JLabel("Manage and organize your saved room designs", SwingConstants.CENTER);
         sub.setForeground(UiKit.MUTED);
-        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
-        sub.setBorder(new EmptyBorder(6, 0, 0, 0));
-
-        left.add(title);
-        left.add(sub);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 1.05f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JButton cta = UiKit.primaryButton("+   Create New Design");
         cta.setFont(UiKit.scaled(cta, Font.BOLD, 1.00f));
+        cta.setPreferredSize(new Dimension(220, 42)); // Fixed size for better look
+        cta.setMaximumSize(new Dimension(220, 42));
+        cta.setAlignmentX(Component.CENTER_ALIGNMENT);
         cta.addActionListener(e -> this.router.show(ScreenKeys.NEW_DESIGN));
 
-        row.add(left, BorderLayout.WEST);
-        row.add(cta, BorderLayout.EAST);
-        return row;
+        p.add(h1);
+        p.add(sub);
+        p.add(vSpace(22));
+        p.add(cta);
+        return p;
     }
 
     // ✅ UPDATED: accept frame and wire listeners
     private JComponent searchFilterCard(AppFrame frame) {
-        UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
+        card.setOpaque(false);
         card.setBorderPaint(UiKit.BORDER);
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(new EmptyBorder(12, 12, 12, 12));
+        card.setLayout(new GridBagLayout());
+        card.setBorder(new EmptyBorder(18, 18, 18, 18));
 
-        JPanel row1 = new JPanel(new BorderLayout(10, 0));
-        row1.setOpaque(false);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 0, 16, 0);
 
-        searchField = UiKit.searchField(SEARCH_PLACEHOLDER);
-        JButton filters = UiKit.ghostButton("Filters");
-        filters.setFont(UiKit.scaled(filters, Font.PLAIN, 1.00f));
-        filters.setPreferredSize(new Dimension(110, filters.getPreferredSize().height));
+        // Search Bar Section
+        JPanel searchRow = new JPanel(new BorderLayout(14, 0));
+        searchRow.setOpaque(false);
 
-        // ✅ live search
+        UiKit.SearchResult sr = UiKit.searchFieldWithIcon(SEARCH_PLACEHOLDER);
+        searchField = sr.field;
+        sr.panel.setPreferredSize(new Dimension(300, 42));
+        
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e) { refreshGrid(frame); }
             @Override public void removeUpdate(DocumentEvent e) { refreshGrid(frame); }
             @Override public void changedUpdate(DocumentEvent e) { refreshGrid(frame); }
         });
 
-        row1.add(searchField, BorderLayout.CENTER);
-        row1.add(filters, BorderLayout.EAST);
+        searchRow.add(sr.panel, BorderLayout.CENTER);
+        card.add(searchRow, gbc);
 
-        JPanel tags = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 10));
-        tags.setOpaque(false);
+        // Filters Section (Responsive Flow)
+        gbc.gridy = 1;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        
+        JPanel filtersRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 10));
+        filtersRow.setOpaque(false);
 
-        JLabel tagsLbl = new JLabel("Tags:");
-        tagsLbl.setForeground(UiKit.MUTED);
-        tagsLbl.setFont(UiKit.scaled(tagsLbl, Font.PLAIN, 0.92f));
-
-        tags.add(tagsLbl);
-        tags.add(UiKit.chipPrimary("Modern"));
-        tags.add(UiKit.chip("Classic"));
-        tags.add(UiKit.chip("Minimalist"));
-        tags.add(UiKit.chip("Industrial"));
-        tags.add(linkChip("+ More"));
-
-        JPanel row3 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        row3.setOpaque(false);
-
-        JLabel roomShapeLbl = new JLabel("Room Shape:");
-        roomShapeLbl.setForeground(UiKit.MUTED);
-        roomShapeLbl.setFont(UiKit.scaled(roomShapeLbl, Font.PLAIN, 0.90f));
+        JLabel shapeLbl = new JLabel("Room Shape:");
+        shapeLbl.setForeground(UiKit.MUTED);
+        shapeLbl.setFont(UiKit.scaled(shapeLbl, Font.BOLD, 0.88f));
 
         shapesBox = new JComboBox<>(new String[]{"All Shapes", "Rectangular", "Square", "L-Shape"});
         UiKit.styleDropdown(shapesBox);
+        shapesBox.setPreferredSize(new Dimension(140, 36)); // Balanced size
         shapesBox.addActionListener(e -> refreshGrid(frame));
 
         JLabel sizeLbl = new JLabel("Size:");
         sizeLbl.setForeground(UiKit.MUTED);
-        sizeLbl.setFont(UiKit.scaled(sizeLbl, Font.PLAIN, 0.90f));
+        sizeLbl.setFont(UiKit.scaled(sizeLbl, Font.BOLD, 0.88f));
 
         sizeBox = new JComboBox<>(new String[]{"All Sizes", "Small", "Medium", "Large"});
         UiKit.styleDropdown(sizeBox);
+        sizeBox.setPreferredSize(new Dimension(120, 36)); // Balanced size
         sizeBox.addActionListener(e -> refreshGrid(frame));
 
-        row3.add(roomShapeLbl);
-        row3.add(shapesBox);
-        row3.add(sizeLbl);
-        row3.add(sizeBox);
+        JButton resetBtn = UiKit.ghostButton("Reset All");
+        resetBtn.setFont(UiKit.scaled(resetBtn, Font.BOLD, 0.88f));
+        resetBtn.setPreferredSize(new Dimension(100, 36));
+        resetBtn.addActionListener(e -> {
+            resetFilters();
+            refreshGrid(frame);
+        });
 
-        card.add(row1);
-        card.add(tags);
-        card.add(row3);
+        filtersRow.add(shapeLbl);
+        filtersRow.add(shapesBox);
+        filtersRow.add(Box.createHorizontalStrut(12));
+        filtersRow.add(sizeLbl);
+        filtersRow.add(sizeBox);
+        filtersRow.add(Box.createHorizontalStrut(12));
+        filtersRow.add(resetBtn);
+
+        card.add(filtersRow, gbc);
 
         return card;
     }
 
     // ✅ UPDATED: accept frame and wire sort + view toggle + clear filters
     private JComponent metaRow(AppFrame frame) {
-        JPanel row = new JPanel(new BorderLayout());
+        JPanel row = new JPanel(new GridBagLayout());
         row.setOpaque(false);
 
-        showingLabel = new JLabel("Showing 0 designs    ");
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+
+        showingLabel = new JLabel("Showing 0 designs   ");
         showingLabel.setForeground(UiKit.MUTED);
-        showingLabel.setFont(UiKit.scaled(showingLabel, Font.PLAIN, 0.90f));
+        showingLabel.setFont(UiKit.scaled(showingLabel, Font.BOLD, 0.92f));
 
         clearFiltersLabel = new JLabel("Clear all filters");
-        clearFiltersLabel.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.PRIMARY);
-        clearFiltersLabel.setFont(UiKit.scaled(clearFiltersLabel, Font.PLAIN, 0.90f));
+        clearFiltersLabel.setForeground(UiKit.PRIMARY);
+        clearFiltersLabel.setFont(UiKit.scaled(clearFiltersLabel, Font.BOLD, 0.92f));
         clearFiltersLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         clearFiltersLabel.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
@@ -226,17 +275,17 @@ public class DesignLibraryPage extends JPanel {
             }
         });
 
-        JPanel leftWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        JPanel leftWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         leftWrap.setOpaque(false);
         leftWrap.add(showingLabel);
         leftWrap.add(clearFiltersLabel);
 
-        JPanel rightWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel rightWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 5));
         rightWrap.setOpaque(false);
 
         JLabel sortLbl = new JLabel("Sort by:");
         sortLbl.setForeground(UiKit.MUTED);
-        sortLbl.setFont(UiKit.scaled(sortLbl, Font.PLAIN, 0.90f));
+        sortLbl.setFont(UiKit.scaled(sortLbl, Font.PLAIN, 0.95f));
 
         sortBox = new JComboBox<>(new String[]{"Most Recent", "Oldest", "Name A-Z"});
         UiKit.styleDropdown(sortBox);
@@ -245,7 +294,6 @@ public class DesignLibraryPage extends JPanel {
         gridBtn = UiKit.iconButton("▦");
         listBtn = UiKit.iconButton("≡");
 
-        // ✅ view toggle wiring
         gridBtn.setToolTipText("Grid view");
         listBtn.setToolTipText("List view");
 
@@ -264,8 +312,10 @@ public class DesignLibraryPage extends JPanel {
         rightWrap.add(gridBtn);
         rightWrap.add(listBtn);
 
-        row.add(leftWrap, BorderLayout.WEST);
-        row.add(rightWrap, BorderLayout.EAST);
+        row.add(leftWrap, gbc);
+        gbc.gridx = 1; gbc.weightx = 0.0;
+        gbc.anchor = GridBagConstraints.EAST;
+        row.add(rightWrap, gbc);
         return row;
     }
 
@@ -280,9 +330,8 @@ public class DesignLibraryPage extends JPanel {
     /* ========================= Dynamic grid ========================= */
 
     private void refreshGrid(AppFrame frame) {
-        gridHost.removeAll();
-
         if (appState == null) {
+            gridHost.removeAll();
             gridHost.add(emptyState("AppState not wired",
                     "Please use the 3-argument constructor in ShellScreen."), BorderLayout.CENTER);
             if (showingLabel != null) showingLabel.setText("Showing 0 designs    ");
@@ -292,6 +341,33 @@ public class DesignLibraryPage extends JPanel {
         }
 
         List<Design> designs = appState.getRepo().getAllSortedByLastUpdatedDesc();
+
+        // ✅ Optimization: Check if filters OR underlying data actually changed before rebuilding.
+        String q = (searchField == null) ? "" : searchField.getText();
+        // Robust placeholder check
+        if (q != null && (q.trim().equalsIgnoreCase(SEARCH_PLACEHOLDER) || q.trim().isEmpty())) {
+            q = "";
+        }
+        q = q.trim();
+
+        String shape = (shapesBox == null) ? "" : (String) shapesBox.getSelectedItem();
+        String size = (sizeBox == null) ? "" : (String) sizeBox.getSelectedItem();
+        String sort = (sortBox == null) ? "" : (String) sortBox.getSelectedItem();
+
+        // Data-aware metrics: count + timestamp of most recent design
+        int count = (designs == null) ? 0 : designs.size();
+        long latest = (designs == null || designs.isEmpty()) ? 0 : designs.get(0).getLastUpdatedEpochMs();
+
+        int columns = gridMode ? getGridColumns() : 1;
+        String state = count + "|" + latest + "|" + q + "|" + shape + "|" + size + "|" + sort + "|" + gridMode + "|" + columns;
+
+        // If nothing changed and we already have content, skip.
+        if (state.equals(lastAppliedFilterState) && gridHost.getComponentCount() > 0) {
+            return;
+        }
+        lastAppliedFilterState = state;
+
+        gridHost.removeAll();
         List<Design> filtered = applyFilters(designs);
         filtered = applySort(filtered);
 
@@ -310,7 +386,7 @@ public class DesignLibraryPage extends JPanel {
 
     private List<Design> applyFilters(List<Design> designs) {
         String q = (searchField == null) ? "" : searchField.getText();
-        if (SEARCH_PLACEHOLDER.equals(q)) {
+        if (SEARCH_PLACEHOLDER.equalsIgnoreCase(q)) {
             q = "";
         }
         q = safe(q, "").toLowerCase(Locale.ENGLISH);
@@ -374,15 +450,6 @@ public class DesignLibraryPage extends JPanel {
         sb.append(safe(d.getDesignName(), "")).append(" ");
         sb.append(safe(d.getCustomerName(), "")).append(" ");
 
-        // tags are optional (avoid compile risk by using reflection)
-        Object tags = invoke(d, "getTags");
-        if (tags instanceof Collection) {
-            for (Object t : (Collection<?>) tags) {
-                if (t != null) sb.append(t.toString()).append(" ");
-            }
-        } else if (tags != null) {
-            sb.append(tags.toString()).append(" ");
-        }
 
         return sb.toString().toLowerCase(Locale.ENGLISH);
     }
@@ -435,27 +502,36 @@ public class DesignLibraryPage extends JPanel {
     }
 
     private JComponent emptyState(String title, String subtitle) {
-        UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
+        card.setOpaque(false);
         card.setBorderPaint(UiKit.BORDER);
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(new EmptyBorder(22, 22, 22, 22));
+        card.setLayout(new GridBagLayout()); // Center the box
+        card.setBorder(new EmptyBorder(60, 20, 60, 20));
 
-        JLabel t = new JLabel(title);
+        JPanel box = new JPanel();
+        box.setOpaque(false);
+        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+
+        JLabel t = new JLabel(title, SwingConstants.CENTER);
         t.setForeground(UiKit.TEXT);
-        t.setFont(UiKit.scaled(t, Font.BOLD, 1.10f));
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.4f));
+        t.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel s = new JLabel(subtitle);
+        JLabel s = new JLabel(subtitle, SwingConstants.CENTER);
         s.setForeground(UiKit.MUTED);
-        s.setFont(UiKit.scaled(s, Font.PLAIN, 0.98f));
-        s.setBorder(new EmptyBorder(8, 0, 0, 0));
+        s.setFont(UiKit.scaled(s, Font.PLAIN, 1.1f));
+        s.setBorder(new EmptyBorder(10, 0, 0, 0));
+        s.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        card.add(t);
-        card.add(s);
+        box.add(t);
+        box.add(s);
+
+        card.add(box);
         return card;
     }
 
     private JComponent grid(AppFrame frame, List<Design> designs) {
-        JPanel grid = new JPanel(new GridLayout(0, 4, 14, 14));
+        JPanel grid = new JPanel(new GridLayout(0, getGridColumns(), GRID_GAP, GRID_GAP));
         grid.setOpaque(false);
 
         for (Design d : designs) {
@@ -473,7 +549,7 @@ public class DesignLibraryPage extends JPanel {
 
     // ✅ NEW: list view (same cards, 1 per row)
     private JComponent list(AppFrame frame, List<Design> designs) {
-        JPanel list = new JPanel(new GridLayout(0, 1, 14, 14));
+        JPanel list = new JPanel(new GridLayout(0, 1, GRID_GAP, GRID_GAP));
         list.setOpaque(false);
 
         for (Design d : designs) {
@@ -490,50 +566,57 @@ public class DesignLibraryPage extends JPanel {
     }
 
     private JComponent designCard(AppFrame frame, Design design, String title, String client, String size, String timeAgo) {
-        UiKit.RoundedPanel card = new UiKit.RoundedPanel(14, UiKit.WHITE);
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(16, UiKit.WHITE);
+        card.setOpaque(false);
         card.setBorderPaint(UiKit.BORDER);
-        card.setLayout(new BorderLayout());
-        card.setBorder(new EmptyBorder(10, 10, 10, 10));
+        card.setLayout(new BorderLayout(0, 12));
+        card.setBorder(new EmptyBorder(14, 14, 14, 14));
+        card.setPreferredSize(new Dimension(CARD_MIN_WIDTH, 300));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
+        // Preview Area
         Mini2DPreviewPanel img = new Mini2DPreviewPanel();
-        img.setOpaque(true);
-        img.setBackground(imagePlaceholderFill());
-        img.setPreferredSize(new Dimension(0, 130));
+        img.setPreferredSize(new Dimension(CARD_MIN_WIDTH - 28, 160));
         img.setDesign(design);
 
+        // Info Area
         JPanel info = new JPanel();
         info.setOpaque(false);
         info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
-        info.setBorder(new EmptyBorder(10, 2, 6, 2));
+        info.setBorder(new EmptyBorder(0, 4, 0, 4));
 
         JLabel t = new JLabel(title);
         t.setForeground(UiKit.TEXT);
-        t.setFont(UiKit.scaled(t, Font.BOLD, 1.00f));
+        t.setFont(UiKit.scaled(t, Font.BOLD, 1.15f));
+        t.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel sub = new JLabel(client);
         sub.setForeground(UiKit.MUTED);
-        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.92f));
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
         sub.setBorder(new EmptyBorder(4, 0, 0, 0));
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel meta = new JLabel(size + "   •   " + timeAgo);
         meta.setForeground(softMuted());
-        meta.setFont(UiKit.scaled(meta, Font.PLAIN, 0.90f));
-        meta.setBorder(new EmptyBorder(6, 0, 0, 0));
+        meta.setFont(UiKit.scaled(meta, Font.PLAIN, 0.88f));
+        meta.setBorder(new EmptyBorder(8, 0, 0, 0));
+        meta.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         info.add(t);
         info.add(sub);
         info.add(meta);
 
-        JPanel actions = new JPanel(new BorderLayout(10, 0));
-        actions.setOpaque(false);
-        actions.setBorder(new EmptyBorder(8, 0, 0, 0));
+        // Actions Area (Open + Icons)
+        JPanel actionsRow = new JPanel(new BorderLayout(12, 0));
+        actionsRow.setOpaque(false);
+        actionsRow.setBorder(new EmptyBorder(4, 0, 0, 0));
 
-        JButton open = UiKit.primaryButton("Open");
-        open.setBorder(new EmptyBorder(8, 12, 8, 12));
+        JButton open = UiKit.primaryButton("Open Design");
+        open.setMargin(new Insets(6, 16, 6, 16));
         open.setFont(UiKit.scaled(open, Font.BOLD, 0.95f));
         open.addActionListener(e -> openDesign(design));
 
-        JPanel iconRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel iconRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         iconRow.setOpaque(false);
 
         JButton duplicate = UiKit.iconButton("⧉");
@@ -543,8 +626,9 @@ public class DesignLibraryPage extends JPanel {
             refreshGrid(frame);
         });
 
-        JButton edit = UiKit.iconButton("✎");
-        edit.setToolTipText("Edit Details");
+        JButton edit = UiKit.ghostButton("Edit");
+        edit.setToolTipText("Edit design info");
+        edit.setFont(UiKit.scaled(edit, Font.BOLD, 0.88f));
         edit.addActionListener(e -> {
             if (appState != null) {
                 appState.setCurrentDesignId(design.getId());
@@ -552,9 +636,10 @@ public class DesignLibraryPage extends JPanel {
             }
         });
 
-        JButton delete = UiKit.iconButton("🗑");
+        JButton delete = UiKit.ghostButton("Delete");
         delete.setToolTipText("Delete");
         delete.setForeground(UiKit.DANGER);
+        delete.setFont(UiKit.scaled(delete, Font.BOLD, 0.88f));
         delete.addActionListener(e -> {
             int ok = JOptionPane.showConfirmDialog(
                     this,
@@ -564,7 +649,6 @@ public class DesignLibraryPage extends JPanel {
             );
             if (ok == JOptionPane.YES_OPTION) {
                 appState.getRepo().delete(design.getId());
-                // if current selection was this design, clear it
                 if (design.getId().equals(appState.getCurrentDesignId())) {
                     appState.setCurrentDesignId(null);
                 }
@@ -576,28 +660,31 @@ public class DesignLibraryPage extends JPanel {
         iconRow.add(edit);
         iconRow.add(delete);
 
-        actions.add(open, BorderLayout.CENTER);
-        actions.add(iconRow, BorderLayout.EAST);
+        actionsRow.add(open, BorderLayout.CENTER);
+        actionsRow.add(iconRow, BorderLayout.EAST);
 
-        JPanel body = new JPanel(new BorderLayout());
-        body.setOpaque(false);
-        body.add(info, BorderLayout.CENTER);
-        body.add(actions, BorderLayout.SOUTH);
+        JPanel main = new JPanel();
+        main.setOpaque(false);
+        main.setLayout(new BorderLayout(0, 12));
+        main.add(img, BorderLayout.NORTH);
+        main.add(info, BorderLayout.CENTER);
 
-        card.add(img, BorderLayout.NORTH);
-        card.add(body, BorderLayout.CENTER);
+        card.add(main, BorderLayout.CENTER);
+        card.add(actionsRow, BorderLayout.SOUTH);
 
+        // Hover Effect
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) {
-                card.setFill(hoverFill());
+                card.setFill(new Color(0xFBFCFF)); // Subtle highlight
+                card.setBorderPaint(UiKit.PRIMARY); // Border accent
                 card.repaint();
             }
             @Override public void mouseExited(MouseEvent e) {
                 card.setFill(UiKit.WHITE);
+                card.setBorderPaint(UiKit.BORDER);
                 card.repaint();
             }
             @Override public void mouseClicked(MouseEvent e) {
-                // Clicking the card also opens
                 if (e.getClickCount() == 2) openDesign(design);
             }
         });
@@ -638,15 +725,6 @@ public class DesignLibraryPage extends JPanel {
         }
     }
 
-    private JComponent linkChip(String text) {
-        JLabel l = new JLabel(text);
-        l.setOpaque(true);
-        l.setBackground(isHighContrast() ? UiKit.WHITE : new Color(0xEEF2FF));
-        l.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.PRIMARY_DARK);
-        l.setFont(UiKit.scaled(l, Font.BOLD, 0.92f));
-        l.setBorder(new EmptyBorder(6, 10, 6, 10));
-        return l;
-    }
 
     // -------- reflection helpers (safe + compile-proof) --------
 
@@ -672,5 +750,23 @@ public class DesignLibraryPage extends JPanel {
             } catch (Exception ignored) {}
         }
         return null;
+    }
+    private static Component vSpace(int px) {
+        return Box.createRigidArea(new Dimension(0, px));
+    }
+
+    private int getGridColumns() {
+        int hostWidth = gridHost == null ? 0 : gridHost.getWidth();
+        if (hostWidth <= 0) hostWidth = PAGE_MAX_WIDTH;
+        int cardWithGap = CARD_MIN_WIDTH + GRID_GAP;
+        return Math.max(1, (hostWidth + GRID_GAP) / cardWithGap);
+    }
+
+    private static class ScrollablePanel extends JPanel implements Scrollable {
+        @Override public Dimension getPreferredScrollableViewportSize() { return super.getPreferredSize(); }
+        @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 18; }
+        @Override public int getScrollableBlockIncrement(Rectangle r, int o, int d) { return r.height; }
+        @Override public boolean getScrollableTracksViewportWidth() { return true; }
+        @Override public boolean getScrollableTracksViewportHeight() { return false; }
     }
 }

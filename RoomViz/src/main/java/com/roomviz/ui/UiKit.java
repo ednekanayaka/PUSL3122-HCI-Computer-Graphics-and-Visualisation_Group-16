@@ -48,6 +48,7 @@ public final class UiKit {
     public static Color CHIP_TEXT = new Color(0x374151);
 
     public static Color DANGER = new Color(0xDC2626);
+    public static Color SUCCESS = new Color(0x10B981);
 
     // ===== Apply settings globally =====
     public static void applySettings(UserSettings s) {
@@ -174,20 +175,62 @@ public final class UiKit {
     }
 
     // ===== Buttons =====
+    public static class RoundButton extends JButton {
+        private Color color1, color2;
+        private int radius = 8;
+
+        public RoundButton(String text) {
+            super(text);
+            setOpaque(false);
+            setContentAreaFilled(false);
+            setFocusPainted(false);
+            setBorder(new EmptyBorder(10, 16, 10, 16));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        public void setGradient(Color c1, Color c2) {
+            this.color1 = c1;
+            this.color2 = c2;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+
+            if (color1 != null && color2 != null) {
+                GradientPaint gp = new GradientPaint(0, 0, color1, w, h, color2);
+                g2.setPaint(gp);
+            } else {
+                g2.setColor(getBackground());
+            }
+
+            g2.fillRoundRect(0, 0, w, h, radius, radius);
+
+            // Subtle border
+            if (color1 == null) {
+                g2.setColor(getBackground().darker());
+                g2.drawRoundRect(0, 0, w - 1, h - 1, radius, radius);
+            }
+
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
     public static JButton primaryButton(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
+        RoundButton b = new RoundButton(text);
         b.setBackground(PRIMARY);
         b.setForeground(Color.WHITE);
-        b.setBorder(new EmptyBorder(10, 14, 10, 14));
         return b;
     }
 
     public static JButton ghostButton(String text) {
-        JButton b = new JButton(text);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
+        RoundButton b = new RoundButton(text);
         b.setBackground(WHITE);
         b.setForeground(TEXT);
         b.setBorder(BorderFactory.createCompoundBorder(
@@ -198,9 +241,7 @@ public final class UiKit {
     }
 
     public static JButton iconButton(String iconText) {
-        JButton b = new JButton(iconText);
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFocusPainted(false);
+        RoundButton b = new RoundButton(iconText);
         b.setBackground(WHITE);
         b.setForeground(TEXT);
         b.setBorder(BorderFactory.createCompoundBorder(
@@ -237,13 +278,33 @@ public final class UiKit {
 
     // ===== Textfield with placeholder =====
     public static JTextField searchField(String placeholder) {
+        return searchFieldWithIcon(placeholder).field;
+    }
+
+    public static class SearchResult {
+        public JPanel panel;
+        public JTextField field;
+    }
+
+    public static SearchResult searchFieldWithIcon(String placeholder) {
+        JPanel wrapper = new JPanel(new BorderLayout(8, 0));
+        wrapper.setOpaque(true);
+        wrapper.setBackground(WHITE);
+        wrapper.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER, 1, true),
+                new EmptyBorder(8, 12, 8, 12)
+        ));
+
+        JLabel icon = new JLabel("🔍");
+        icon.setForeground(new Color(0x9CA3AF));
+        icon.setFont(scaled(icon, Font.PLAIN, 1.1f));
+
         JTextField tf = new JTextField();
         tf.setText(placeholder);
+        tf.setBorder(null);
+        tf.setOpaque(false);
         tf.setForeground(new Color(0x9CA3AF));
-        tf.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER, 1, true),
-                new EmptyBorder(10, 12, 10, 12)
-        ));
+        tf.setFont(scaled(tf, Font.PLAIN, 0.95f));
 
         tf.addFocusListener(new FocusAdapter() {
             @Override
@@ -253,7 +314,6 @@ public final class UiKit {
                     tf.setForeground(TEXT);
                 }
             }
-
             @Override
             public void focusLost(FocusEvent e) {
                 if (tf.getText().trim().isEmpty()) {
@@ -263,7 +323,13 @@ public final class UiKit {
             }
         });
 
-        return tf;
+        wrapper.add(icon, BorderLayout.WEST);
+        wrapper.add(tf, BorderLayout.CENTER);
+
+        SearchResult res = new SearchResult();
+        res.panel = wrapper;
+        res.field = tf;
+        return res;
     }
 
     // ===== ✅ Input field styling (FIX for "Cannot resolve method inputField") =====

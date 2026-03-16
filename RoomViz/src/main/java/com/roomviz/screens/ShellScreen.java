@@ -5,7 +5,9 @@ import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
 import com.roomviz.data.DesignRepository;
+import com.roomviz.data.Session;
 import com.roomviz.data.SettingsRepository;
+import com.roomviz.data.UserRepository;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -15,7 +17,18 @@ public class ShellScreen extends JPanel {
 
     private final Router innerRouter = new Router();
 
-    public ShellScreen(AppFrame frame, Router outerRouter, SettingsRepository settingsRepo) {
+    public ShellScreen(AppFrame frame,
+                       Router outerRouter,
+                       SettingsRepository settingsRepo,
+                       UserRepository userRepo,
+                       Session session) {
+
+        // ✅ BLOCK ACCESS: if not logged in, kick back to login
+        if (session == null || !session.isLoggedIn()) {
+            SwingUtilities.invokeLater(frame::goToLogin);
+            return;
+        }
+
         // ✅ Apply saved accessibility settings BEFORE building UI
         UiKit.applySettings(settingsRepo.get());
 
@@ -29,8 +42,8 @@ public class ShellScreen extends JPanel {
         // Let shell background show through behind inner pages
         innerRouter.root().setOpaque(false);
 
-        // ✅ TopBar now reads user from settingsRepo
-        TopBar topBar = new TopBar(frame, settingsRepo);
+        // ✅ TopBar now uses Session logout + reads display info from settings
+        TopBar topBar = new TopBar(frame, settingsRepo, session);
 
         /* =========================
            Pages inside shell

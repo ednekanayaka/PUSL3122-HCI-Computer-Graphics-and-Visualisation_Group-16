@@ -1,6 +1,7 @@
 package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
+import com.roomviz.data.Session;
 import com.roomviz.data.SettingsRepository;
 import com.roomviz.model.UserSettings;
 import com.roomviz.ui.UiKit;
@@ -13,6 +14,7 @@ public class TopBar extends JPanel {
 
     private final AppFrame frame;
     private final SettingsRepository settingsRepo;
+    private final Session session;
 
     private final JLabel title = new JLabel("Dashboard", SwingConstants.CENTER);
 
@@ -20,9 +22,10 @@ public class TopBar extends JPanel {
     private final JLabel nameLabel = new JLabel("User");
     private final JLabel emailLabel = new JLabel("user@email.com");
 
-    public TopBar(AppFrame frame, SettingsRepository settingsRepo) {
+    public TopBar(AppFrame frame, SettingsRepository settingsRepo, Session session) {
         this.frame = frame;
         this.settingsRepo = settingsRepo;
+        this.session = session;
 
         setLayout(new BorderLayout());
         setOpaque(true);
@@ -103,7 +106,12 @@ public class TopBar extends JPanel {
                 BorderFactory.createLineBorder(UiKit.BORDER, 1, true),
                 new EmptyBorder(9, 12, 9, 12)
         ));
-        b.addActionListener(e -> frame.goToLogin());
+
+        // ✅ clear session + go login
+        b.addActionListener(e -> {
+            if (session != null) session.logout();
+            frame.goToLogin();
+        });
 
         // hover (HC-safe)
         b.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -130,7 +138,6 @@ public class TopBar extends JPanel {
         UserSettings s = settingsRepo.get();
         if (s == null) return;
 
-        // FIX: UserSettings uses getFullName(), not getDisplayName()
         String nm = safe(s.getFullName(), "User");
         String em = safe(s.getEmail(), "user@email.com");
 

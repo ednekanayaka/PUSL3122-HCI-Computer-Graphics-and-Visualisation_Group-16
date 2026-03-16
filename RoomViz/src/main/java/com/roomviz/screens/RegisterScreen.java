@@ -1,7 +1,5 @@
 package com.roomviz.screens;
 
-import javax.swing.text.JTextComponent;
-
 import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
@@ -10,28 +8,30 @@ import com.roomviz.data.SettingsRepository;
 import com.roomviz.data.UserRepository;
 import com.roomviz.model.User;
 import com.roomviz.model.UserSettings;
-import com.roomviz.security.PasswordUtil;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.geom.RoundRectangle2D;
 
-public class LoginScreen extends JPanel {
+public class RegisterScreen extends JPanel {
 
+    private final JTextField nameField;
     private final JTextField emailField;
     private final JPasswordField passwordField;
+    private final JPasswordField confirmPasswordField;
     private final JLabel errorLabel;
 
     private final SettingsRepository settingsRepo;
     private final UserRepository userRepo;
     private final Session session;
 
-    public LoginScreen(AppFrame frame, Router router, SettingsRepository settingsRepo,
-                       UserRepository userRepo, Session session) {
+    public RegisterScreen(AppFrame frame, Router router, SettingsRepository settingsRepo,
+                          UserRepository userRepo, Session session) {
         this.settingsRepo = settingsRepo;
         this.userRepo = userRepo;
         this.session = session;
@@ -94,12 +94,12 @@ public class LoginScreen extends JPanel {
         card.setMaximumSize(new Dimension(420, Integer.MAX_VALUE));
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel h1 = new JLabel("Welcome back");
+        JLabel h1 = new JLabel("Create your account");
         h1.setAlignmentX(Component.LEFT_ALIGNMENT);
         h1.setForeground(UiKit.TEXT);
         h1.setFont(UiKit.scaled(h1, Font.BOLD, 1.35f));
 
-        JLabel p = new JLabel("<html><div style='width:280px;'>Sign in using the account stored in the RoomViz local database.</div></html>");
+        JLabel p = new JLabel("<html><div style='width:280px;'>Register once and your account is saved in the local RoomViz database.</div></html>");
         p.setAlignmentX(Component.LEFT_ALIGNMENT);
         p.setForeground(UiKit.MUTED);
         p.setFont(UiKit.scaled(p, Font.PLAIN, 0.92f));
@@ -109,6 +109,17 @@ public class LoginScreen extends JPanel {
         card.add(p);
         card.add(Box.createVerticalStrut(18));
 
+        // Full name
+        JLabel nameLbl = label("Full name");
+        card.add(nameLbl);
+        card.add(Box.createVerticalStrut(6));
+
+        nameField = new JTextField();
+        styleTextField(nameField);
+        setPlaceholder(nameField, "Sarah Johnson");
+        card.add(wrapField(nameField));
+        card.add(Box.createVerticalStrut(14));
+
         // Email
         JLabel emailLbl = label("Email address");
         card.add(emailLbl);
@@ -116,7 +127,7 @@ public class LoginScreen extends JPanel {
 
         emailField = new JTextField();
         styleTextField(emailField);
-        setPlaceholder(emailField, "designer@studio.com");
+        setPlaceholder(emailField, "sarah.johnson@designstudio.com");
         card.add(wrapField(emailField));
         card.add(Box.createVerticalStrut(14));
 
@@ -127,29 +138,19 @@ public class LoginScreen extends JPanel {
 
         passwordField = new JPasswordField();
         styleTextField(passwordField);
-        setPlaceholder(passwordField, "Enter your password");
+        setPlaceholder(passwordField, "Create a password");
         card.add(wrapField(passwordField));
-        card.add(Box.createVerticalStrut(12));
+        card.add(Box.createVerticalStrut(14));
 
-        // Remember + forgot row
-        JPanel row = new JPanel(new BorderLayout());
-        row.setOpaque(false);
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Confirm
+        JLabel confirmLbl = label("Confirm password");
+        card.add(confirmLbl);
+        card.add(Box.createVerticalStrut(6));
 
-        JCheckBox remember = new JCheckBox("Remember me");
-        remember.setOpaque(false);
-        remember.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x374151));
-        remember.setFont(UiKit.scaled(remember, Font.PLAIN, 0.92f));
-
-        JButton forgot = linkButton("Forgot password?");
-        forgot.addActionListener(e ->
-                JOptionPane.showMessageDialog(this, "Forgot password flow can be added later.", "Info", JOptionPane.INFORMATION_MESSAGE)
-        );
-
-        row.add(remember, BorderLayout.WEST);
-        row.add(forgot, BorderLayout.EAST);
-
-        card.add(row);
+        confirmPasswordField = new JPasswordField();
+        styleTextField(confirmPasswordField);
+        setPlaceholder(confirmPasswordField, "Re-enter password");
+        card.add(wrapField(confirmPasswordField));
         card.add(Box.createVerticalStrut(12));
 
         // Error label
@@ -160,107 +161,93 @@ public class LoginScreen extends JPanel {
         card.add(errorLabel);
         card.add(Box.createVerticalStrut(8));
 
-        // Login button
-        JButton loginBtn = new JButton("Log in");
-        stylePrimaryButton(loginBtn);
-        loginBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        loginBtn.addActionListener(e -> {
+        // Register button
+        JButton registerBtn = new JButton("Create account");
+        stylePrimaryButton(registerBtn);
+        registerBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        registerBtn.addActionListener(e -> {
+            String name = nameField.getText().trim();
             String email = emailField.getText().trim();
-            char[] pwChars = passwordField.getPassword();
+            String pw = new String(passwordField.getPassword()).trim();
+            String cpw = new String(confirmPasswordField.getPassword()).trim();
 
-            if (email.isEmpty() || email.equals("designer@studio.com")) {
-                showError("Please enter your email address.");
+            if (name.isEmpty() || name.equals("Sarah Johnson")) {
+                showError("Please enter your full name.");
                 return;
             }
-            String pw = new String(pwChars).trim();
-            if (pw.isEmpty() || pw.equals("Enter your password")) {
-                showError("Please enter your password.");
+            if (email.isEmpty() || email.equals("sarah.johnson@designstudio.com") || !email.contains("@")) {
+                showError("Please enter a valid email address.");
+                return;
+            }
+            if (pw.isEmpty() || pw.equals("Create a password")) {
+                showError("Please create a password.");
+                return;
+            }
+            if (pw.length() < 4) {
+                showError("Password is too short (min 4 characters).");
+                return;
+            }
+            if (!pw.equals(cpw)) {
+                showError("Passwords do not match.");
                 return;
             }
 
             try {
                 String emailLower = email.toLowerCase().trim();
 
-                User u = userRepo.findByEmail(emailLower);
-                if (u == null) {
-                    showError("No account found for this email. Please register first.");
+                // ✅ Check if email already exists
+                if (userRepo.findByEmail(emailLower) != null) {
+                    showError("An account with this email already exists.");
                     return;
                 }
 
-                boolean ok = PasswordUtil.verify(pwChars, u.getPasswordHash());
-                if (!ok) {
-                    showError("Incorrect password.");
-                    return;
-                }
+                // ✅ Create real DB user (password is hashed in repo)
+                User u = userRepo.createUser(name, emailLower, pw.toCharArray());
 
-                // ✅ Login session
+                // ✅ Login session immediately
                 session.login(u);
 
-                // ✅ Save display info only (NOT password)
+                // ✅ Save only display info to settings (NOT password)
                 UserSettings s = (settingsRepo == null) ? null : settingsRepo.get();
                 if (s == null) s = UserSettings.defaults();
                 s.setFullName(u.getFullName());
                 s.setEmail(u.getEmail());
-                s.setPasswordPlain("");
+                s.setPasswordPlain(""); // stop using plain password
                 settingsRepo.save(s);
 
                 showError(" ");
+                JOptionPane.showMessageDialog(
+                        this,
+                        "Account created successfully.\nYou are now logged in.",
+                        "Registered",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+
                 frame.goToAppShell();
 
             } catch (Exception ex) {
                 ex.printStackTrace();
-                showError("Login failed. Please try again.");
-            } finally {
-                // clear password array (small security hygiene)
-                for (int i = 0; i < pwChars.length; i++) pwChars[i] = 0;
+                showError("Registration failed. Please try again.");
             }
         });
 
-        card.add(loginBtn);
+        card.add(registerBtn);
         card.add(Box.createVerticalStrut(14));
 
-        JLabel small = new JLabel("Your account is for store designers only.");
-        small.setAlignmentX(Component.LEFT_ALIGNMENT);
-        small.setForeground(UiKit.MUTED);
-        small.setFont(UiKit.scaled(small, Font.PLAIN, 0.88f));
-        card.add(small);
-        card.add(Box.createVerticalStrut(10));
-
-        JPanel registerRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        registerRow.setOpaque(false);
-        registerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JLabel noAcc = new JLabel("Don't have an account? ");
-        noAcc.setForeground(UiKit.MUTED);
-        noAcc.setFont(UiKit.scaled(noAcc, Font.PLAIN, 0.90f));
-
-        JButton goRegister = linkButton("Register");
-        goRegister.addActionListener(e -> router.show(ScreenKeys.REGISTER));
-
-        registerRow.add(noAcc);
-        registerRow.add(goRegister);
-
-        card.add(registerRow);
-        card.add(Box.createVerticalStrut(12));
-
-        JPanel bottomRow = new JPanel(new BorderLayout());
+        // Back to login row
+        JPanel bottomRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         bottomRow.setOpaque(false);
         bottomRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JButton requestAccess = linkButton("Request access");
-        requestAccess.addActionListener(e ->
-                JOptionPane.showMessageDialog(this, "Request access flow can be added later.", "Info", JOptionPane.INFORMATION_MESSAGE)
-        );
+        JLabel small = new JLabel("Already have an account? ");
+        small.setForeground(UiKit.MUTED);
+        small.setFont(UiKit.scaled(small, Font.PLAIN, 0.90f));
 
-        JButton demo = new JButton("Continue as demo");
-        styleSecondaryButton(demo);
-        demo.addActionListener(e ->
-                JOptionPane.showMessageDialog(this, "Demo mode disabled for real auth.\nPlease login or register.", "Info", JOptionPane.INFORMATION_MESSAGE)
-        );
+        JButton backToLogin = linkButton("Log in");
+        backToLogin.addActionListener(e -> router.show(ScreenKeys.LOGIN));
 
-        bottomRow.add(requestAccess, BorderLayout.WEST);
-        bottomRow.add(demo, BorderLayout.EAST);
-
+        bottomRow.add(small);
+        bottomRow.add(backToLogin);
         card.add(bottomRow);
 
         // Put card top-aligned, allow scroll naturally
@@ -281,15 +268,15 @@ public class LoginScreen extends JPanel {
         rightContent.setLayout(new BoxLayout(rightContent, BoxLayout.Y_AXIS));
         rightContent.setBorder(new EmptyBorder(60, 60, 60, 60));
 
-        JLabel icon = new JLabel("\uD83D\uDECB");
+        JLabel icon = new JLabel("\uD83D\uDD8C");
         icon.setFont(UiKit.scaled(icon, Font.PLAIN, 1.65f));
         icon.setForeground(Color.WHITE);
 
-        JLabel title = new JLabel("<html>Design stunning room<br/>visualizations</html>");
+        JLabel title = new JLabel("<html>Start building your<br/>room designs</html>");
         title.setForeground(Color.WHITE);
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.70f));
 
-        JLabel desc = new JLabel("<html><div style='width:320px;'>Create immersive furniture layouts and bring your interior design visions to life with powerful visualization tools.</div></html>");
+        JLabel desc = new JLabel("<html><div style='width:320px;'>Register to save your account locally, then explore the dashboard, 2D planner, and 3D view.</div></html>");
         desc.setForeground(new Color(255, 255, 255, 210));
         desc.setFont(UiKit.scaled(desc, Font.PLAIN, 1.00f));
 
@@ -300,11 +287,11 @@ public class LoginScreen extends JPanel {
         rightContent.add(desc);
         rightContent.add(Box.createVerticalStrut(20));
 
-        rightContent.add(bullet("Real-time 3D room rendering"));
+        rightContent.add(bullet("Local SQLite account"));
         rightContent.add(Box.createVerticalStrut(10));
-        rightContent.add(bullet("Extensive furniture catalog"));
+        rightContent.add(bullet("Instant access to dashboard"));
         rightContent.add(Box.createVerticalStrut(10));
-        rightContent.add(bullet("Client collaboration features"));
+        rightContent.add(bullet("2D + 3D visualization tools"));
 
         right.add(rightContent);
     }
@@ -313,14 +300,6 @@ public class LoginScreen extends JPanel {
 
     private boolean isHighContrast() {
         return UiKit.TEXT.equals(Color.BLACK) && UiKit.BORDER.equals(Color.BLACK);
-    }
-
-    private static String safe(String s) {
-        return s == null ? "" : s.trim();
-    }
-
-    private static String safeLower(String s) {
-        return safe(s).toLowerCase();
     }
 
     private JLabel label(String text) {
@@ -389,18 +368,6 @@ public class LoginScreen extends JPanel {
         b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
     }
 
-    private void styleSecondaryButton(JButton b) {
-        b.setBackground(UiKit.WHITE);
-        b.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x6D28D9));
-        b.setFocusPainted(false);
-        b.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : new Color(0xD8B4FE), 1, true),
-                new EmptyBorder(10, 14, 10, 14)
-        ));
-        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        b.setFont(UiKit.scaled(b, Font.PLAIN, 0.92f));
-    }
-
     private void showError(String msg) {
         errorLabel.setText(msg == null ? " " : msg);
     }
@@ -434,6 +401,7 @@ public class LoginScreen extends JPanel {
         });
     }
 
+    // ===== Custom rounded card =====
     static class RoundedCard extends JPanel {
         public RoundedCard() { setOpaque(false); }
 
@@ -459,6 +427,7 @@ public class LoginScreen extends JPanel {
         }
     }
 
+    // ===== Gradient panel (right side) =====
     static class GradientPanel extends JPanel {
         private final Color a;
         private final Color b;

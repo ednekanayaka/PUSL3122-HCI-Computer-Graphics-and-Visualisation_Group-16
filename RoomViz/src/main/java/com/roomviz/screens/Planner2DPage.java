@@ -39,9 +39,12 @@ import java.awt.event.*;
  * - Search text filters furniture templates by name
  * - Chips filter by category: All / Seating / Tables
  *
- * ✅ FIX (compile):
- * - Removes self-referencing local Runnable for chips rebuild (prevents "might not have been initialized")
- * - Uses a safe helper method instead
+ * ✅ NEW (Requested):
+ * - Placed Items list in the right panel with Remove buttons + click-to-select
+ *
+ * ✅ FIX (Window-size drift / items pushed out):
+ * - When loading a design, use the Design's saved layout bounds as the reference frame
+ *   for pixel->relative conversion inside RoomCanvas, then render using current room bounds.
  */
 public class Planner2DPage extends JPanel {
 
@@ -69,6 +72,10 @@ public class Planner2DPage extends JPanel {
 
     private final JLabel autosaved = new JLabel("● Not saved yet");
     private boolean programmaticUpdate = false;
+
+    // ✅ NEW: Placed Items list UI
+    private final JPanel placedItemsList = new JPanel();
+    private JScrollPane placedItemsScroll;
 
     // Debounced autosave timer
     private final javax.swing.Timer autosaveTimer;
@@ -167,6 +174,7 @@ public class Planner2DPage extends JPanel {
         // Wire controls after canvas has items
         wireRightPanel();
         updatePropertiesFromSelection();
+        rebuildPlacedItemsList();
     }
 
     private void showNoDesignState() {
@@ -222,12 +230,29 @@ public class Planner2DPage extends JPanel {
         Design d = appState.getCurrentDesign();
         if (d == null) return; // empty state already shown
 
+        // ✅ FIX: Use saved layout bounds as the reference frame for pixel->rel conversion
+        // (prevents items "pushing out" when opened in a smaller window).
+        Rectangle legacy = null;
+        try {
+            Integer lx = d.getLayoutX();
+            Integer ly = d.getLayoutY();
+            Integer lw = d.getLayoutWidth();
+            Integer lh = d.getLayoutHeight();
+            if (lx != null && ly != null && lw != null && lh != null && lw > 0 && lh > 0) {
+                legacy = new Rectangle(lx, ly, lw, lh);
+            }
+        } catch (Throwable ignored) { }
+
+        canvas.setLegacyLayoutBounds(legacy);
+
         // ✅ IMPORTANT FIX:
         // Always load a deep copy into the canvas so resize/repaint logic
         // cannot mutate the Design's live list (which the 3D page reads).
         java.util.List<FurnitureItem> items = deepCopyItems(d.getItems());
-        canvas.setItems(items);
+
+        // ✅ Order matters: setRoomSpec first so room cache exists before rel sync
         canvas.setRoomSpec(d.getRoomSpec());
+        canvas.setItems(items);
 
         // Initial snapshot so first change can always be undone back to loaded state
         undoStack.clear();
@@ -236,6 +261,8 @@ public class Planner2DPage extends JPanel {
 
         autosaved.setForeground(UiKit.MUTED);
         autosaved.setText("● Loaded");
+
+        rebuildPlacedItemsList();
     }
 
     private boolean isAutosaveEnabled() {
@@ -345,6 +372,7 @@ public class Planner2DPage extends JPanel {
             updatePropertiesFromSelection();
             FurnitureItem sel = canvas.getSelected();
             appState.setSelectedItemId(sel == null ? null : sel.getId());
+            rebuildPlacedItemsList();
         } finally {
             restoringHistory = false;
         }
@@ -463,6 +491,7 @@ public class Planner2DPage extends JPanel {
                         pushUndoSnapshot();
                         canvas.addItemFromTemplate(t);
                         markDirtyAndAutosave();
+                        rebuildPlacedItemsList();
                         canvas.requestFocusInWindow();
                     }
                 }
@@ -729,6 +758,23 @@ public class Planner2DPage extends JPanel {
         content.add(selectedTitle);
         content.add(Box.createVerticalStrut(14));
 
+        // ✅ NEW: Placed Items list
+        content.add(sectionLabel("Placed Items"));
+
+        placedItemsList.setOpaque(false);
+        placedItemsList.setLayout(new BoxLayout(placedItemsList, BoxLayout.Y_AXIS));
+
+        placedItemsScroll = new JScrollPane(placedItemsList);
+        placedItemsScroll.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(UiKit.BORDER, 1, true),
+                BorderFactory.createEmptyBorder()
+        ));
+        placedItemsScroll.getVerticalScrollBar().setUnitIncrement(14);
+        placedItemsScroll.setPreferredSize(new Dimension(0, 190));
+
+        content.add(placedItemsScroll);
+        content.add(Box.createVerticalStrut(14));
+
         content.add(sectionLabel("Position"));
         content.add(twoFieldRow("X Position", xField, "Y Position", yField));
         content.add(Box.createVerticalStrut(14));
@@ -779,6 +825,59 @@ public class Planner2DPage extends JPanel {
 
         card.add(sc, BorderLayout.CENTER);
         return card;
+    }
+
+    // ✅ NEW: Rebuild placed items list (click selects, Remove deletes)
+    private void rebuildPlacedItemsList() {
+        placedItemsList.removeAll();
+
+        java.util.List<FurnitureItem> items = canvas.getItems();
+        if (items == null || items.isEmpty()) {
+            JLabel empty = new JLabel("No items yet");
+            empty.setForeground(UiKit.MUTED);
+            empty.setBorder(new EmptyBorder(6, 6, 6, 6));
+            placedItemsList.add(empty);
+            placedItemsList.revalidate();
+            placedItemsList.repaint();
+            return;
+        }
+
+        for (FurnitureItem it : items) {
+            JPanel row = new JPanel(new BorderLayout(8, 0));
+            row.setOpaque(false);
+            row.setBorder(new EmptyBorder(6, 6, 6, 6));
+
+            JLabel name = new JLabel(it.getName());
+            name.setForeground(UiKit.TEXT);
+
+            JButton remove = UiKit.ghostButton("Remove");
+            remove.setForeground(UiKit.DANGER);
+
+            // click name = select item
+            name.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            name.addMouseListener(new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent e) {
+                    canvas.setSelected(it);
+                    canvas.requestFocusInWindow();
+                }
+            });
+
+            remove.addActionListener(e -> {
+                pushUndoSnapshot();
+                canvas.deleteItem(it);
+                updatePropertiesFromSelection();
+                rebuildPlacedItemsList();
+                markDirtyAndAutosave();
+            });
+
+            row.add(name, BorderLayout.CENTER);
+            row.add(remove, BorderLayout.EAST);
+
+            placedItemsList.add(row);
+        }
+
+        placedItemsList.revalidate();
+        placedItemsList.repaint();
     }
 
     private JComponent sectionLabel(String text) {
@@ -904,24 +1003,28 @@ public class Planner2DPage extends JPanel {
             pushUndoSnapshot();
             canvas.layerForward();
             markDirtyAndAutosave();
+            rebuildPlacedItemsList();
         });
         backward.addActionListener(e -> {
             if (canvas.getSelected() == null) return;
             pushUndoSnapshot();
             canvas.layerBackward();
             markDirtyAndAutosave();
+            rebuildPlacedItemsList();
         });
         toFront.addActionListener(e -> {
             if (canvas.getSelected() == null) return;
             pushUndoSnapshot();
             canvas.layerToFront();
             markDirtyAndAutosave();
+            rebuildPlacedItemsList();
         });
         toBack.addActionListener(e -> {
             if (canvas.getSelected() == null) return;
             pushUndoSnapshot();
             canvas.layerToBack();
             markDirtyAndAutosave();
+            rebuildPlacedItemsList();
         });
 
         row.add(forward);
@@ -1017,23 +1120,29 @@ public class Planner2DPage extends JPanel {
             pushUndoSnapshot();
             canvas.deleteSelected();
             updatePropertiesFromSelection();
+            rebuildPlacedItemsList();
             markDirtyAndAutosave();
         });
 
         canvas.setOnSelectionChanged(() -> {
             updatePropertiesFromSelection();
+            rebuildPlacedItemsList();
             FurnitureItem sel = canvas.getSelected();
             appState.setSelectedItemId(sel == null ? null : sel.getId());
         });
 
         canvas.setOnEditStart(this::pushUndoSnapshot);
-        canvas.setOnEditCommit(this::markDirtyAndAutosave);
+        canvas.setOnEditCommit(() -> {
+            markDirtyAndAutosave();
+            rebuildPlacedItemsList();
+        });
 
         canvas.setOnDeleteRequested(() -> {
             if (canvas.getSelected() == null) return;
             pushUndoSnapshot();
             canvas.deleteSelected();
             updatePropertiesFromSelection();
+            rebuildPlacedItemsList();
             markDirtyAndAutosave();
         });
     }
