@@ -9,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * JSON-backed settings store.
- * Path: ~/.roomviz/settings.json
+ *
+ * Legacy path: ~/.roomviz/settings.json
+ * Per-user path: ~/.roomviz/users/<userId>/settings.json
  */
 public class SettingsRepository {
 
@@ -26,6 +28,13 @@ public class SettingsRepository {
 
     public static SettingsRepository createDefault() {
         File dir = new File(System.getProperty("user.home"), ".roomviz");
+        if (!dir.exists()) dir.mkdirs();
+        File file = new File(dir, "settings.json");
+        return new SettingsRepository(file);
+    }
+
+    public static SettingsRepository createForUser(int userId) {
+        File dir = new File(System.getProperty("user.home"), ".roomviz/users/" + userId);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, "settings.json");
         return new SettingsRepository(file);

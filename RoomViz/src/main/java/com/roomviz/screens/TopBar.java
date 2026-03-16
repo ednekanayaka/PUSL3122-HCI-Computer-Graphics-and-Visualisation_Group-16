@@ -2,8 +2,7 @@ package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
 import com.roomviz.data.Session;
-import com.roomviz.data.SettingsRepository;
-import com.roomviz.model.UserSettings;
+import com.roomviz.model.User;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -13,7 +12,6 @@ import java.awt.*;
 public class TopBar extends JPanel {
 
     private final AppFrame frame;
-    private final SettingsRepository settingsRepo;
     private final Session session;
 
     private final JLabel title = new JLabel("Dashboard", SwingConstants.CENTER);
@@ -22,9 +20,8 @@ public class TopBar extends JPanel {
     private final JLabel nameLabel = new JLabel("User");
     private final JLabel emailLabel = new JLabel("user@email.com");
 
-    public TopBar(AppFrame frame, SettingsRepository settingsRepo, Session session) {
+    public TopBar(AppFrame frame, Session session) {
         this.frame = frame;
-        this.settingsRepo = settingsRepo;
         this.session = session;
 
         setLayout(new BorderLayout());
@@ -32,17 +29,14 @@ public class TopBar extends JPanel {
         setBackground(UiKit.WHITE);
         setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UiKit.BORDER));
 
-        // left spacer (keeps title centered)
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 10));
         left.setOpaque(false);
         left.setBorder(new EmptyBorder(0, 10, 0, 10));
 
-        // center title
         title.setForeground(UiKit.TEXT);
         title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
         title.setBorder(new EmptyBorder(12, 0, 12, 0));
 
-        // right: user pill + logout
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 8));
         right.setOpaque(false);
         right.setBorder(new EmptyBorder(0, 10, 0, 12));
@@ -57,7 +51,7 @@ public class TopBar extends JPanel {
         add(title, BorderLayout.CENTER);
         add(right, BorderLayout.EAST);
 
-        refreshUserFromSettings();
+        refreshUserFromSession();
     }
 
     private JPanel buildUserPill() {
@@ -70,7 +64,6 @@ public class TopBar extends JPanel {
         ));
         pill.setLayout(new BoxLayout(pill, BoxLayout.X_AXIS));
 
-        // avatar circle (simple)
         JLabel avatar = new JLabel("\u25CF");
         avatar.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x9CA3AF));
         avatar.setFont(UiKit.scaled(avatar, Font.BOLD, 1.10f));
@@ -107,16 +100,14 @@ public class TopBar extends JPanel {
                 new EmptyBorder(9, 12, 9, 12)
         ));
 
-        // ✅ clear session + go login
         b.addActionListener(e -> {
             if (session != null) session.logout();
             frame.goToLogin();
         });
 
-        // hover (HC-safe)
         b.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override public void mouseEntered(java.awt.event.MouseEvent e) {
-                b.setBackground(isHighContrast() ? UiKit.WHITE : new Color(0xFEF2F2)); // red-50
+                b.setBackground(isHighContrast() ? UiKit.WHITE : new Color(0xFEF2F2));
             }
             @Override public void mouseExited(java.awt.event.MouseEvent e) {
                 b.setBackground(UiKit.WHITE);
@@ -134,12 +125,11 @@ public class TopBar extends JPanel {
         title.setText(t == null ? "" : t);
     }
 
-    public void refreshUserFromSettings() {
-        UserSettings s = settingsRepo.get();
-        if (s == null) return;
+    public void refreshUserFromSession() {
+        User u = (session == null) ? null : session.getCurrentUser();
 
-        String nm = safe(s.getFullName(), "User");
-        String em = safe(s.getEmail(), "user@email.com");
+        String nm = (u == null) ? "User" : safe(u.getFullName(), "User");
+        String em = (u == null) ? "user@email.com" : safe(u.getEmail(), "user@email.com");
 
         nameLabel.setText(nm);
         emailLabel.setText(em);

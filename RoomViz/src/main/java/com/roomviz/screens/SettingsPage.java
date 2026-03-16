@@ -4,7 +4,10 @@ import com.roomviz.app.AppFrame;
 import com.roomviz.app.Router;
 import com.roomviz.app.ScreenKeys;
 import com.roomviz.data.AppState;
+import com.roomviz.data.Session;
 import com.roomviz.data.SettingsRepository;
+import com.roomviz.data.UserRepository;
+import com.roomviz.model.User;
 import com.roomviz.model.UserSettings;
 import com.roomviz.ui.UiKit;
 
@@ -15,15 +18,12 @@ import java.awt.*;
 
 /**
  * Settings page UI (functional)
- * - Saves/loads settings from ~/.roomviz/settings.json
- * - Export Data -> exports designs.json content to user-selected JSON
- * - Delete Account -> clears designs + settings and navigates to login
  *
  * ✅ Updated:
- * - Uses UiKit.scaled(...) for ALL fonts (so Small/Medium/Large can increase AND decrease correctly)
- * - Uses UiKit colors everywhere (so High Contrast works)
- * - Toggle setup no longer forces initial ON/OFF (prevents overriding loaded settings)
- * - After Save: triggers onSaved + refreshes Swing UI tree
+ * - Profile fields (Full Name, Job Title, Department) are saved to SQLite per user
+ * - Preferences (autosave, units, font size, contrast) are saved to per-user settings.json
+ * - Password change uses real authentication (SQLite + PasswordUtil) (no passwordPlain)
+ * - Export Data exports the CURRENT USER's designs repo (already per-user)
  */
 public class SettingsPage extends JPanel {
 
@@ -31,6 +31,8 @@ public class SettingsPage extends JPanel {
     private final Router outerRouter;
     private final AppState appState;
     private final SettingsRepository settingsRepo;
+    private final UserRepository userRepo;
+    private final Session session;
     private final Runnable onSaved;
 
     // Profile fields
@@ -60,11 +62,20 @@ public class SettingsPage extends JPanel {
     private final JToggleButton highContrastToggle = new JToggleButton();
     private final JLabel lastSavedLabel = new JLabel(" ");
 
-    public SettingsPage(AppFrame frame, Router outerRouter, AppState appState, SettingsRepository settingsRepo, Runnable onSaved) {
+    public SettingsPage(AppFrame frame,
+                        Router outerRouter,
+                        AppState appState,
+                        SettingsRepository settingsRepo,
+                        UserRepository userRepo,
+                        Session session,
+                        Runnable onSaved) {
+
         this.frame = frame;
         this.outerRouter = outerRouter;
         this.appState = appState;
         this.settingsRepo = settingsRepo;
+        this.userRepo = userRepo;
+        this.session = session;
         this.onSaved = onSaved;
 
         setLayout(new BorderLayout());
@@ -118,11 +129,9 @@ public class SettingsPage extends JPanel {
         // Footer actions
         add(buildFooterActions(), BorderLayout.SOUTH);
 
-        // Style controls (DO NOT override selected state here)
         styleControls();
         wirePasswordValidation();
 
-        // Load real saved settings into UI
         loadFromRepo();
     }
 
@@ -210,7 +219,6 @@ public class SettingsPage extends JPanel {
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         body.setBorder(new EmptyBorder(16, 0, 0, 0));
 
-        // Autosave row
         JPanel autosaveRow = new JPanel(new BorderLayout(14, 0));
         autosaveRow.setOpaque(false);
         autosaveRow.setAlignmentX(0.0f);
@@ -241,7 +249,6 @@ public class SettingsPage extends JPanel {
         body.add(autosaveRow);
         body.add(Box.createVerticalStrut(18));
 
-        // Units dropdown
         body.add(labeledDropdown("Default Units", defaultUnits));
         body.add(Box.createVerticalStrut(18));
 
@@ -249,9 +256,10 @@ public class SettingsPage extends JPanel {
         resetBtn.addActionListener(e -> {
             int ok = JOptionPane.showConfirmDialog(this, "Reset all settings to defaults?", "Reset", JOptionPane.OK_CANCEL_OPTION);
             if (ok == JOptionPane.OK_OPTION) {
-                applyToUi(UserSettings.defaults());
+                applyPreferencesToUi(UserSettings.defaults());
             }
         });
+
         JPanel btnWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         btnWrap.setOpaque(false);
         btnWrap.setAlignmentX(0.0f);
@@ -352,7 +360,7 @@ public class SettingsPage extends JPanel {
         body.add(linkRow("Privacy Settings", this::showPrivacy));
         body.add(Box.createVerticalStrut(12));
 
-        JLabel delete = new JLabel("Delete Account");
+        JLabel delete = new JLabel("Delete Account (Local Data)");
         delete.setForeground(UiKit.DANGER);
         delete.setFont(UiKit.scaled(delete, Font.BOLD, 0.98f));
         delete.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -399,11 +407,20 @@ public class SettingsPage extends JPanel {
         return footer;
     }
 
-    /* ======================= REAL LOGIC ======================= */
+    /* ======================= LOAD/SAVE ======================= */
 
     private void loadFromRepo() {
-        UserSettings s = (settingsRepo == null) ? UserSettings.defaults() : settingsRepo.reload();
-        applyToUi(s);
+        // Preferences from per-user settings.json
+        UserSettings prefs = (settingsRepo == null) ? UserSettings.defaults() : settingsRepo.reload();
+        applyPreferencesToUi(prefs);
+
+        // Profile from session/userRepo (DB)
+        User u = (session != null && session.isLoggedIn()) ? session.getCurrentUser() : null;
+        if (u != null && userRepo != null) {
+            User fresh = userRepo.findById(u.getId());
+            if (fresh != null) u = fresh;
+        }
+        applyProfileToUi(u);
 
         currentPw.setText("");
         newPw.setText("");
@@ -411,15 +428,26 @@ public class SettingsPage extends JPanel {
         pwError.setText(" ");
     }
 
-    private void applyToUi(UserSettings s) {
+    private void applyProfileToUi(User u) {
+        if (u == null) {
+            fullName.setText("");
+            email.setText("");
+            jobTitle.setText("");
+            department.setSelectedIndex(0);
+            return;
+        }
+
+        fullName.setText(safe(u.getFullName()));
+        email.setText(safe(u.getEmail()));
+        email.setEditable(false); // keep email immutable in this prototype (matches auth key)
+
+        jobTitle.setText(safe(u.getJobTitle()));
+        String dept = safe(u.getDepartment());
+        if (!dept.isBlank()) department.setSelectedItem(dept);
+    }
+
+    private void applyPreferencesToUi(UserSettings s) {
         if (s == null) s = UserSettings.defaults();
-
-        fullName.setText(s.getFullName());
-        email.setText(s.getEmail());
-        jobTitle.setText(s.getJobTitle());
-
-        String dept = s.getDepartment();
-        if (dept != null && !dept.isBlank()) department.setSelectedItem(dept);
 
         autosaveToggle.setSelected(s.isAutosaveEnabled());
         refreshSwitch(autosaveToggle);
@@ -433,27 +461,24 @@ public class SettingsPage extends JPanel {
         refreshSwitch(highContrastToggle);
     }
 
-    private UserSettings collectFromUi() {
+    private UserSettings collectPreferencesFromUi() {
         UserSettings s = new UserSettings();
-        s.setFullName(fullName.getText());
-        s.setEmail(email.getText());
-        s.setJobTitle(jobTitle.getText());
-        s.setDepartment(String.valueOf(department.getSelectedItem()));
-
         s.setAutosaveEnabled(autosaveToggle.isSelected());
         s.setDefaultUnit(unitLabelToCode(String.valueOf(defaultUnits.getSelectedItem())));
-
         s.setFontSize(String.valueOf(fontSize.getSelectedItem()));
         s.setHighContrast(highContrastToggle.isSelected());
         return s;
     }
 
     private void onSave() {
-        if (settingsRepo == null) {
-            JOptionPane.showMessageDialog(this, "Settings repository not available.");
+        if (settingsRepo == null || userRepo == null || session == null || !session.isLoggedIn()) {
+            JOptionPane.showMessageDialog(this, "Not logged in or repositories not available.");
             return;
         }
 
+        int uid = session.getCurrentUser().getId();
+
+        // ===== password change (optional) =====
         String cur = new String(currentPw.getPassword()).trim();
         String np = new String(newPw.getPassword()).trim();
         String cp = new String(confirmPw.getPassword()).trim();
@@ -463,38 +488,52 @@ public class SettingsPage extends JPanel {
                 pwError.setText("Passwords do not match");
                 return;
             }
-
-            String existing = settingsRepo.get().getPasswordPlain();
-            if (existing != null && !existing.isBlank()) {
-                if (cur.isBlank() || !existing.equals(cur)) {
-                    pwError.setText("Current password is incorrect");
-                    return;
-                }
+            if (cur.isBlank()) {
+                pwError.setText("Enter current password to change password");
+                return;
+            }
+            boolean ok = userRepo.verifyPasswordById(uid, currentPw.getPassword());
+            if (!ok) {
+                pwError.setText("Current password is incorrect");
+                return;
             }
         }
 
         pwError.setText(" ");
 
-        UserSettings s = collectFromUi();
+        // ===== save profile to DB =====
+        try {
+            userRepo.updateProfile(
+                    uid,
+                    fullName.getText(),
+                    jobTitle.getText(),
+                    String.valueOf(department.getSelectedItem())
+            );
 
-        if (np.isBlank()) {
-            s.setPasswordPlain(settingsRepo.get().getPasswordPlain());
-        } else {
-            s.setPasswordPlain(np);
+            // if changing password
+            if (!np.isBlank()) {
+                userRepo.updatePasswordById(uid, newPw.getPassword());
+            }
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Failed to save profile/password.");
+            return;
         }
 
-        settingsRepo.save(s);
+        // ===== save preferences to per-user settings.json =====
+        UserSettings prefs = collectPreferencesFromUi();
+        settingsRepo.save(prefs);
 
         // Update last saved
         java.time.format.DateTimeFormatter dtf = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
         lastSavedLabel.setText("Last saved: " + java.time.LocalTime.now().format(dtf));
 
-        // ✅ notify shell + apply global UI refresh
+        // notify shell
         if (onSaved != null) onSaved.run();
+
         SwingUtilities.invokeLater(() -> {
-            try {
-                SwingUtilities.updateComponentTreeUI(frame);
-            } catch (Exception ignored) {}
+            try { SwingUtilities.updateComponentTreeUI(frame); } catch (Exception ignored) {}
             frame.invalidate();
             frame.validate();
             frame.repaint();
@@ -532,11 +571,11 @@ public class SettingsPage extends JPanel {
     private void onDeleteAccount() {
         int ok = JOptionPane.showConfirmDialog(
                 this,
-                "This will remove ALL local data:\n" +
+                "This will remove ALL local data for this user:\n" +
                         "• Saved designs\n" +
-                        "• Saved settings\n\n" +
+                        "• Saved preferences\n\n" +
                         "Continue?",
-                "Delete Account",
+                "Delete Local Data",
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.WARNING_MESSAGE
         );
@@ -556,11 +595,12 @@ public class SettingsPage extends JPanel {
 
         JOptionPane.showMessageDialog(
                 this,
-                "Local account data deleted.\nReturning to Login.",
+                "Local data deleted.\nReturning to Login.",
                 "Deleted",
                 JOptionPane.INFORMATION_MESSAGE
         );
 
+        if (session != null) session.logout();
         if (outerRouter != null) outerRouter.show(ScreenKeys.LOGIN);
     }
 
@@ -625,7 +665,6 @@ public class SettingsPage extends JPanel {
     /* ======================= UI helpers ======================= */
 
     private void styleControls() {
-        // Ensure consistent font + colors on inputs (important for High Contrast)
         styleTextField(fullName);
         styleTextField(email);
         styleTextField(jobTitle);
@@ -638,11 +677,9 @@ public class SettingsPage extends JPanel {
         UiKit.styleDropdown(defaultUnits);
         UiKit.styleDropdown(fontSize);
 
-        // Switches: do NOT force selected state here
         setupSwitch(autosaveToggle);
         setupSwitch(highContrastToggle);
 
-        // ensure switch looks correct when selection changes
         autosaveToggle.addActionListener(e -> refreshSwitch(autosaveToggle));
         highContrastToggle.addActionListener(e -> refreshSwitch(highContrastToggle));
     }
@@ -815,16 +852,16 @@ public class SettingsPage extends JPanel {
             b.setForeground(Color.WHITE);
             b.setText("  ON  ");
             b.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(UiKit.PRIMARY.darker(), 1, true),
-                new EmptyBorder(4, 10, 4, 10)
+                    new LineBorder(UiKit.PRIMARY.darker(), 1, true),
+                    new EmptyBorder(4, 10, 4, 10)
             ));
         } else {
             b.setBackground(new Color(0xE5E7EB));
             b.setForeground(new Color(0x374151));
             b.setText("  OFF  ");
             b.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(new Color(0xD1D5DB), 1, true),
-                new EmptyBorder(4, 10, 4, 10)
+                    new LineBorder(new Color(0xD1D5DB), 1, true),
+                    new EmptyBorder(4, 10, 4, 10)
             ));
         }
     }
@@ -861,5 +898,9 @@ public class SettingsPage extends JPanel {
             case "m" -> "Meters (m)";
             default -> "Centimeters (cm)";
         };
+    }
+
+    private static String safe(String s) {
+        return (s == null) ? "" : s.trim();
     }
 }

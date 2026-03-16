@@ -14,8 +14,9 @@ public class AppFrame extends JFrame {
 
     private final Router router = new Router();
 
-    // ✅ Single shared settings repo for the whole app (theme + user display info)
-    private final SettingsRepository settingsRepo = SettingsRepository.createDefault();
+    // ✅ Start with default settings (login/register uses this)
+    // After login, we swap to per-user settingsRepo
+    private SettingsRepository settingsRepo = SettingsRepository.createDefault();
 
     // ✅ Real authentication storage (SQLite) + session
     private final UserRepository userRepo = UserRepository.createDefault();
@@ -31,21 +32,37 @@ public class AppFrame extends JFrame {
         // ✅ Apply theme before building UI
         UiKit.applySettings(settingsRepo.get());
 
-        // Register screens (now with real auth wiring)
+        // ✅ Register only auth screens at startup
         router.add(ScreenKeys.LOGIN, new LoginScreen(this, router, settingsRepo, userRepo, session));
         router.add(ScreenKeys.REGISTER, new RegisterScreen(this, router, settingsRepo, userRepo, session));
-        router.add(ScreenKeys.APP, new ShellScreen(this, router, settingsRepo, userRepo, session));
 
         setContentPane(router.root());
+
+        // ✅ Start at login
         router.show(ScreenKeys.LOGIN);
     }
 
+    /**
+     * ✅ Called after successful login/register.
+     * Switch to per-user settings file, then build shell.
+     */
     public void goToAppShell() {
+        if (session != null && session.isLoggedIn() && session.getCurrentUser() != null) {
+            int uid = session.getCurrentUser().getId();
+            this.settingsRepo = SettingsRepository.createForUser(uid);
+            UiKit.applySettings(settingsRepo.get());
+        }
+
+        router.add(ScreenKeys.APP, new ShellScreen(this, router, settingsRepo, userRepo, session));
         router.show(ScreenKeys.APP);
     }
 
     public void goToLogin() {
         router.show(ScreenKeys.LOGIN);
+    }
+
+    public void goToRegister() {
+        router.show(ScreenKeys.REGISTER);
     }
 
     public SettingsRepository getSettingsRepo() {

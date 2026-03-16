@@ -35,15 +35,16 @@ public class ShellScreen extends JPanel {
         setLayout(new BorderLayout());
         setBackground(UiKit.BG);
 
-        // Shared state across screens (save/load designs + selection)
-        DesignRepository repo = DesignRepository.createDefault();
+        // ✅ Per-user repo (designs are unique per user)
+        int uid = session.getCurrentUser().getId();
+        DesignRepository repo = DesignRepository.createForUser(uid);
         AppState appState = new AppState(repo);
 
         // Let shell background show through behind inner pages
         innerRouter.root().setOpaque(false);
 
-        // ✅ TopBar now uses Session logout + reads display info from settings
-        TopBar topBar = new TopBar(frame, settingsRepo, session);
+        // ✅ TopBar uses session user (not settings.json)
+        TopBar topBar = new TopBar(frame, session);
 
         /* =========================
            Pages inside shell
@@ -61,11 +62,11 @@ public class ShellScreen extends JPanel {
 
         innerRouter.add(
                 ScreenKeys.SETTINGS,
-                new SettingsPage(frame, outerRouter, appState, settingsRepo, () -> {
-                    // refresh TopBar immediately after saving settings
-                    topBar.refreshUserFromSettings();
+                new SettingsPage(frame, outerRouter, appState, settingsRepo, userRepo, session, () -> {
+                    // refresh TopBar immediately after saving settings/profile
+                    topBar.refreshUserFromSession();
 
-                    // ✅ Apply + refresh whole window (no cumulative scaling now because UiKit is fixed)
+                    // ✅ Apply + refresh whole window
                     UiKit.applySettings(settingsRepo.get());
                     UiKit.refreshUI(frame);
 

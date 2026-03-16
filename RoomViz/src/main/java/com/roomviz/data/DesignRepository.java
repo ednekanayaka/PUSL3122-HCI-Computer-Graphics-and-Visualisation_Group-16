@@ -38,13 +38,23 @@ public class DesignRepository {
     }
 
     /**
-     * Default path: ~/.roomviz/designs.json
+     * Default path: ~/.roomviz/designs.json (legacy / single-user fallback)
      */
     public static DesignRepository createDefault() {
         File dir = new File(System.getProperty("user.home"), ".roomviz");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
         return new DesignRepository(new File(dir, "designs.json"));
+    }
+
+    /**
+     * Per-user path: ~/.roomviz/users/<userId>/designs.json
+     */
+    public static DesignRepository createForUser(int userId) {
+        File base = new File(System.getProperty("user.home"), ".roomviz/users/" + userId);
+        //noinspection ResultOfMethodCallIgnored
+        base.mkdirs();
+        return new DesignRepository(new File(base, "designs.json"));
     }
 
     public synchronized List<Design> getAllSortedByLastUpdatedDesc() {
