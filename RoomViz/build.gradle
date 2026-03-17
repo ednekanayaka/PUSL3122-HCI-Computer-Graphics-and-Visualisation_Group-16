@@ -1,0 +1,43 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.roomviz'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Modern Swing look & feel
+    implementation 'com.formdev:flatlaf:3.5.2'
+
+    // JSON (save/load designs)
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    // SQLite database (users + designs metadata)
+    implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
+
+    // Tests (keep)
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+
+    // Silence: "Failed to load StaticLoggerBinder" (sqlite-jdbc pulls slf4j-api)
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.13'
+}
+
+application {
+    // This will be the real entry
+    mainClass = 'com.roomviz.app.App'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+test {
+    useJUnitPlatform()
+}
