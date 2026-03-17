@@ -27,24 +27,8 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
- * 3D Visual Page – simple Java2D raster renderer.
- *
- * - If no design is selected -> show empty state:
- *   "Select or create a design first" + buttons Library / New Design.
- * - Safe getters for Design.layoutX/layoutY/layoutWidth/layoutHeight (handles primitive double OR Double)
- * - Safe getters for Furniture rotation (getRotation / getRotationDeg / etc)
- * - Converts furniture (canvas coords) -> room-local coords for correct 3D placement
- * - Room size prefers layout bounds (or fallback)
- *
- * L-Shape support:
- * - 3D room respects L-Shape cut-out
- * - 3D floor becomes 2 quads for L-Shape, and walls follow L perimeter
- * - Rectangle rooms get full perimeter walls (4 sides)
- *
- * Resize stability:
- * - REMOVED auto zoomToFit() spam during resize (causes drift/jump)
- * - Uses a constant lens FOV angle; projection uses derived focal length
- * - Optional: debounced fit can be triggered manually with Fit button / key
+ * 3D visualizer using a custom Java2D raster renderer.
+ * Handles room layouts, perspective projection, and L-shape specific rendering.
  */
 public class Visual3DPage extends JPanel {
 
@@ -137,6 +121,53 @@ public class Visual3DPage extends JPanel {
         } catch (Throwable ignored) { }
     }
 
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
     /** If presentation mode is ON, force it OFF (restores Shell chrome). */
     private void forceExitPresentationModeIfOn() {
         if (!presentationMode) return;
@@ -179,7 +210,7 @@ public class Visual3DPage extends JPanel {
         });
     }
 
-    /* ========================== EMPTY STATE ========================== */
+    // --- Empty state ---
 
     private boolean isCustomer() {
         try {
@@ -346,7 +377,7 @@ public class Visual3DPage extends JPanel {
         visualMainSplitRef.setDividerLocation(divider2);
     }
 
-    /* ========================== TOP BAR ========================== */
+    // --- Top bar ---
 
     private JComponent buildTopBar() {
         UiKit.RoundedPanel bar = new UiKit.RoundedPanel(16, new Color(0x111827));
@@ -456,7 +487,7 @@ public class Visual3DPage extends JPanel {
         return l;
     }
 
-    /* ========================== MAIN LAYOUT ========================== */
+    // --- Main layout ---
 
     private JComponent buildMain() {
         JPanel wrap = new JPanel(new BorderLayout(10, 10));
@@ -629,7 +660,7 @@ public class Visual3DPage extends JPanel {
         return b;
     }
 
-    /* ========================== Lighting Dropdown ========================== */
+    // --- Lighting ---
 
     private void buildLightingMenu() {
         lightingMenu.setBorder(new LineBorder(new Color(0, 0, 0, 30), 1, true));
@@ -672,7 +703,7 @@ public class Visual3DPage extends JPanel {
         t.start();
     }
 
-    /* ========================== DESIGN LOOKUP ========================== */
+    // --- Design lookup ---
 
     private Design getCurrentDesign() {
         if (appState == null) return null;
@@ -684,7 +715,7 @@ public class Visual3DPage extends JPanel {
         }
     }
 
-    /* ========================== SAFE LAYOUT GETTERS ========================== */
+    // --- Layout helpers ---
 
     private static Double getLayoutX(Design d) { return readDouble(d, "getLayoutX"); }
     private static Double getLayoutY(Design d) { return readDouble(d, "getLayoutY"); }
@@ -707,7 +738,7 @@ public class Visual3DPage extends JPanel {
         return Math.max(min, Math.min(max, value));
     }
 
-    /* ========================== RENDERER PANEL ========================== */
+    // --- Renderer ---
 
     private class RendererPanel extends JPanel {
 

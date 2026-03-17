@@ -76,6 +76,14 @@ public final class UiKit {
     public static Color DANGER = BASE_DANGER;
     public static Color SUCCESS = BASE_SUCCESS;
 
+    // ===== Brand Panel Colors (TopBar / Sidebar) =====
+    public static Color BRAND_BG;
+    public static Color BRAND_TEXT;
+    public static Color BRAND_MUTED;
+    public static Color BRAND_ACTIVE_BG;
+    public static Color BRAND_HOVER_BG;
+    public static Color BRAND_BORDER;
+
     // ===== Semantic UI Colors (auto-switch light/dark) =====
     public static Color CARD_HOVER       = new Color(0xFAFAFB);
     public static Color CHIP_ACTIVE_BG   = new Color(0xEEF2FF);
@@ -122,6 +130,13 @@ public final class UiKit {
             DANGER = HC_DANGER;
             SUCCESS = HC_SUCCESS;
 
+            BRAND_BG = HC_WHITE;
+            BRAND_TEXT = HC_TEXT;
+            BRAND_MUTED = HC_MUTED;
+            BRAND_ACTIVE_BG = HC_TEXT; // we will invert text on active
+            BRAND_HOVER_BG = new Color(0, 0, 0, 10);
+            BRAND_BORDER = HC_BORDER;
+
             highContrastMode = true;
             darkBlueMode = false;
         } else if (darkBlue) {
@@ -138,6 +153,13 @@ public final class UiKit {
             DANGER = DB_DANGER;
             SUCCESS = DB_SUCCESS;
 
+            BRAND_BG = DB_BG;
+            BRAND_TEXT = DB_TEXT;
+            BRAND_MUTED = DB_MUTED;
+            BRAND_ACTIVE_BG = new Color(0x17243B);
+            BRAND_HOVER_BG = new Color(0x111B2E);
+            BRAND_BORDER = DB_BORDER;
+
             highContrastMode = false;
             darkBlueMode = true;
         } else {
@@ -153,6 +175,14 @@ public final class UiKit {
             CHIP_TEXT = BASE_CHIP_TEXT;
             DANGER = BASE_DANGER;
             SUCCESS = BASE_SUCCESS;
+
+            // Light mode uses the darker blue variant for brand panels
+            BRAND_BG = new Color(0x303F9F); // A slightly darker blue for nav and sidebar
+            BRAND_TEXT = Color.WHITE;
+            BRAND_MUTED = new Color(255, 255, 255, 180);
+            BRAND_ACTIVE_BG = new Color(255, 255, 255, 40);
+            BRAND_HOVER_BG = new Color(255, 255, 255, 20);
+            BRAND_BORDER = new Color(255, 255, 255, 40);
 
             highContrastMode = false;
             darkBlueMode = false;
@@ -326,12 +356,20 @@ public final class UiKit {
             int h = getHeight();
 
             if (fill != null) {
-                g2.setColor(fill);
+                if (fill.equals(UiKit.WHITE) && !UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+                    g2.setColor(new Color(255, 255, 255, 170)); // Glass effect
+                } else {
+                    g2.setColor(fill);
+                }
                 g2.fillRoundRect(0, 0, w, h, radius, radius);
             }
 
             if (border != null) {
-                g2.setColor(border);
+                if (border.equals(UiKit.BORDER) && !UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+                    g2.setColor(new Color(255, 255, 255, 200)); // Lighter border
+                } else {
+                    g2.setColor(border);
+                }
                 g2.drawRoundRect(0, 0, w - 1, h - 1, radius, radius);
             }
             g2.dispose();
@@ -342,15 +380,21 @@ public final class UiKit {
     // ===== Buttons =====
     public static class RoundButton extends JButton {
         private Color color1, color2;
-        private int radius = 8;
+        private int radius = 16;
+        private boolean hovered = false;
 
         public RoundButton(String text) {
             super(text);
             setOpaque(false);
             setContentAreaFilled(false);
             setFocusPainted(false);
-            setBorder(new EmptyBorder(10, 16, 10, 16));
+            setBorder(new EmptyBorder(10, 18, 10, 18));
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+            addMouseListener(new java.awt.event.MouseAdapter() {
+                public void mouseEntered(java.awt.event.MouseEvent e) { hovered = true; repaint(); }
+                public void mouseExited(java.awt.event.MouseEvent e) { hovered = false; repaint(); }
+            });
         }
 
         public void setGradient(Color c1, Color c2) {
@@ -368,17 +412,38 @@ public final class UiKit {
             int h = getHeight();
 
             if (color1 != null && color2 != null) {
-                GradientPaint gp = new GradientPaint(0, 0, color1, w, h, color2);
+                Color c1 = hovered && isEnabled() ? color1.brighter() : color1;
+                Color c2 = hovered && isEnabled() ? color2.brighter() : color2;
+                GradientPaint gp = new GradientPaint(0, 0, c1, w, h, c2);
                 g2.setPaint(gp);
             } else {
-                g2.setColor(getBackground());
+                Color bg = getBackground();
+                if (hovered && isEnabled()) {
+                    if (bg.equals(UiKit.WHITE)) {
+                        bg = new Color(243, 244, 246);
+                    } else if (bg.equals(UiKit.BG)) {
+                        bg = bg.darker();
+                    } else {
+                        bg = bg.brighter();
+                    }
+                }
+                
+                // Glass effect for ghost buttons in light mode
+                if (getBackground().equals(UiKit.WHITE) && !UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+                    bg = hovered ? new Color(255, 255, 255, 220) : new Color(255, 255, 255, 140);
+                }
+                g2.setColor(bg);
             }
 
             g2.fillRoundRect(0, 0, w, h, radius, radius);
 
             // Subtle border
             if (color1 == null) {
-                g2.setColor(getBackground().darker());
+                if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode() && getBackground().equals(UiKit.WHITE)) {
+                    g2.setColor(new Color(255, 255, 255, 200));
+                } else {
+                    g2.setColor(UiKit.BORDER);
+                }
                 g2.drawRoundRect(0, 0, w - 1, h - 1, radius, radius);
             }
 
@@ -425,8 +490,18 @@ public final class UiKit {
 
     // ===== Chips =====
     public static JComponent chip(String text) {
-        JLabel l = new JLabel(text);
-        l.setOpaque(true);
+        JLabel l = new JLabel(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        l.setOpaque(false);
         l.setBackground(CHIP_BG);
         l.setForeground(CHIP_TEXT);
         l.setFont(scaled(l, Font.PLAIN, 0.92f));
@@ -435,8 +510,18 @@ public final class UiKit {
     }
 
     public static JComponent chipPrimary(String text) {
-        JLabel l = new JLabel(text);
-        l.setOpaque(true);
+        JLabel l = new JLabel(text) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        l.setOpaque(false);
         if (highContrastEnabled()) {
             l.setBackground(WHITE);
             l.setForeground(TEXT);

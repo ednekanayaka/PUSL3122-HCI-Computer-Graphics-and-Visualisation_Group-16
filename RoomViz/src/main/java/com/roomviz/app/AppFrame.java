@@ -23,7 +23,7 @@ public class AppFrame extends JFrame {
     private final UserRepository userRepo = UserRepository.createDefault();
     private final Session session = new Session();
 
-    /* ================= Presentation / Fullscreen ================= */
+    // Presentation / Fullscreen state
     private boolean presentationMode = false;
     private boolean prevUndecorated = false;
     private Rectangle prevBounds = null;
@@ -106,7 +106,7 @@ public class AppFrame extends JFrame {
         return session;
     }
 
-    /* ================= Presentation / Fullscreen helpers ================= */
+    // Presentation / Fullscreen helpers
 
     /** Enter fullscreen presentation mode (undecorated + maximized). */
     public void enterPresentationMode() {

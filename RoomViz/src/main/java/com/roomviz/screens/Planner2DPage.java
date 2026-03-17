@@ -26,11 +26,7 @@ import java.awt.*;
 import java.awt.event.*;
 
 /**
- * 2D Planner page
- *
- *  (UI access control):
- * - CUSTOMER: read-only (no add/move/delete/resize/rotate/shading/layer changes)
- * - ADMIN: full access
+ * 2D Planner page. Customers are read-only; admins have full access.
  */
 public class Planner2DPage extends JPanel {
 
@@ -38,20 +34,19 @@ public class Planner2DPage extends JPanel {
     private final AppState appState;
     private final SettingsRepository settingsRepo;
 
-    // role context
+    // User session
     private final Session session;
 
     private final RoomCanvas canvas;
 
-    // Right panel controls
+    // Item properties
     private final JLabel selectedTitle = new JLabel("No selection");
     private final JTextField xField = new JTextField("0");
     private final JTextField yField = new JTextField("0");
     private final JSlider rotationSlider = new JSlider(0, 360, 0);
     private final JTextField rotField = new JTextField("0");
-
-    private final JTextField wField = new JTextField("60");
-    private final JTextField hField = new JTextField("40");
+    private final JTextField wField = new JTextField("0.00");
+    private final JTextField hField = new JTextField("0.00");
     private final JCheckBox lockAspect = new JCheckBox("Lock aspect ratio", true);
 
     private final JSlider shadingSlider = new JSlider(0, 100, 50);
@@ -62,7 +57,7 @@ public class Planner2DPage extends JPanel {
     private final JLabel autosaved = new JLabel("● Not saved yet");
     private boolean programmaticUpdate = false;
 
-    // Placed Items list UI
+    // Placed items list
     private final JPanel placedItemsList = new JPanel();
     private JScrollPane placedItemsScroll;
 
@@ -73,7 +68,7 @@ public class Planner2DPage extends JPanel {
     private boolean rotationDragging = false;
     private boolean shadingDragging = false;
 
-    /* ========================= Furniture Library filter state ========================= */
+    // --- Furniture filters ---
 
     private enum FurnitureFilterTab { ALL, SEATING, TABLES }
 
@@ -110,7 +105,7 @@ public class Planner2DPage extends JPanel {
         // IMPORTANT: Create canvas FIRST
         canvas = new RoomCanvas();
 
-        // ===== Autosave timer =====
+        // Autosave
         autosaveTimer = new javax.swing.Timer(700, e -> {
             ((javax.swing.Timer) e.getSource()).stop();
             // customer is read-only, so never autosave
@@ -136,6 +131,53 @@ public class Planner2DPage extends JPanel {
         }
     }
 
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
     private boolean isCustomer() {
         if (session == null) return false; // default admin
         User u = session.getCurrentUser();
@@ -143,7 +185,7 @@ public class Planner2DPage extends JPanel {
         return u.isCustomer();
     }
 
-    /* ========================= UI REBUILD / EMPTY STATE ========================= */
+    // --- UI Rebuild ---
 
     private void rebuildFullUI() {
         removeAll();
@@ -415,7 +457,7 @@ public class Planner2DPage extends JPanel {
         rebuildFullUI();
     }
 
-    /* ========================= Responsive layout ========================= */
+    // --- Layout ---
 
     private void applyResponsiveLayout() {
         if (libraryPanelRef == null || propertiesPanelRef == null || mainSplitRef == null || libraryCenterSplitRef == null) {
@@ -518,7 +560,7 @@ public class Planner2DPage extends JPanel {
         }
     }
 
-    /* ========================= DESIGN LOAD / SAVE ========================= */
+    // --- Load / Save ---
 
     private void loadDesignIntoCanvas() {
         Design d = appState.getCurrentDesignOrNull();
@@ -647,7 +689,7 @@ public class Planner2DPage extends JPanel {
         );
     }
 
-    /* ========================= Undo/Redo via AppState ========================= */
+    // --- Undo / Redo ---
 
     private void pushBeforeChange() {
         // Customer view-only
@@ -719,7 +761,7 @@ public class Planner2DPage extends JPanel {
         markDirtyAndAutosave();
     }
 
-    /* ========================= Deep copy helper ========================= */
+    // --- Helpers ---
 
     private java.util.List<FurnitureItem> deepCopyItems(java.util.List<FurnitureItem> src) {
         java.util.List<FurnitureItem> out = new java.util.ArrayList<>();
@@ -749,7 +791,7 @@ public class Planner2DPage extends JPanel {
         return out;
     }
 
-    /* ========================= LEFT: Furniture Library ========================= */
+    // --- Furniture Library ---
 
     private static void setChipClick(JComponent chip, Runnable onClick) {
         chip.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -831,14 +873,14 @@ public class Planner2DPage extends JPanel {
         header.add(Box.createVerticalStrut(10));
 
         final java.util.List<FurnitureTemplate> allTemplates = new java.util.ArrayList<>();
-        allTemplates.add(new FurnitureTemplate("Accent Chair", "32\" × 34\"", FurnitureKind.CHAIR, 64, 48));
-        allTemplates.add(new FurnitureTemplate("Dining Chair", "18\" × 22\"", FurnitureKind.CHAIR, 44, 36));
-        allTemplates.add(new FurnitureTemplate("Lounge Chair", "36\" × 38\"", FurnitureKind.CHAIR, 70, 56));
-        allTemplates.add(new FurnitureTemplate("Rectangular Table", "72\" × 36\"", FurnitureKind.TABLE_RECT, 120, 70));
-        allTemplates.add(new FurnitureTemplate("Round Table", "48\" Ø", FurnitureKind.TABLE_ROUND, 90, 90));
-        allTemplates.add(new FurnitureTemplate("Coffee Table", "48\" × 24\"", FurnitureKind.TABLE_RECT, 90, 50));
-        allTemplates.add(new FurnitureTemplate("End Table", "20\" × 20\"", FurnitureKind.TABLE_RECT, 44, 44));
-        allTemplates.add(new FurnitureTemplate("Console Table", "48\" × 16\"", FurnitureKind.TABLE_RECT, 90, 38));
+        allTemplates.add(new FurnitureTemplate("Accent Chair", "32\" x 34\"", FurnitureKind.CHAIR, 2.67, 2.83));
+        allTemplates.add(new FurnitureTemplate("Dining Chair", "18\" x 22\"", FurnitureKind.CHAIR, 1.50, 1.83));
+        allTemplates.add(new FurnitureTemplate("Lounge Chair", "36\" x 38\"", FurnitureKind.CHAIR, 3.00, 3.17));
+        allTemplates.add(new FurnitureTemplate("Rectangular Table", "72\" x 36\"", FurnitureKind.TABLE_RECT, 6.00, 3.00));
+        allTemplates.add(new FurnitureTemplate("Round Table", "48\" dia", FurnitureKind.TABLE_ROUND, 4.00, 4.00));
+        allTemplates.add(new FurnitureTemplate("Coffee Table", "48\" x 24\"", FurnitureKind.TABLE_RECT, 4.00, 2.00));
+        allTemplates.add(new FurnitureTemplate("End Table", "20\" x 20\"", FurnitureKind.TABLE_RECT, 1.67, 1.67));
+        allTemplates.add(new FurnitureTemplate("Console Table", "48\" x 16\"", FurnitureKind.TABLE_RECT, 4.00, 1.33));
 
         DefaultListModel<FurnitureTemplate> model = new DefaultListModel<>();
         for (FurnitureTemplate t : allTemplates) model.addElement(t);
@@ -858,8 +900,27 @@ public class Planner2DPage extends JPanel {
                 if (e.getClickCount() == 2) {
                     FurnitureTemplate t = list.getSelectedValue();
                     if (t != null) {
+                        if (!canvas.canFitTemplate(t)) {
+                            JOptionPane.showMessageDialog(
+                                    Planner2DPage.this,
+                                    "No space enough for this furniture item in the current room.",
+                                    "Not enough space",
+                                    JOptionPane.WARNING_MESSAGE
+                            );
+                            return;
+                        }
+
                         pushBeforeChange();
-                        canvas.addItemFromTemplate(t);
+                        boolean added = canvas.addItemFromTemplate(t);
+                        if (!added) {
+                            JOptionPane.showMessageDialog(
+                                    Planner2DPage.this,
+                                    "No space enough to place this furniture item without overlap.",
+                                    "Not enough space",
+                                    JOptionPane.WARNING_MESSAGE
+                            );
+                            return;
+                        }
                         recordAfterChange();
 
                         markDirtyAndAutosave();
@@ -1275,7 +1336,7 @@ public class Planner2DPage extends JPanel {
             JPanel scaleBody = new JPanel();
             scaleBody.setOpaque(false);
             scaleBody.setLayout(new BoxLayout(scaleBody, BoxLayout.Y_AXIS));
-            scaleBody.add(twoFieldRow("Width", wField, "Height", hField));
+            scaleBody.add(twoFieldRow("Width (ft)", wField, "Length (ft)", hField));
             scaleBody.add(Box.createVerticalStrut(10));
 
             lockAspect.setOpaque(false);
@@ -1457,13 +1518,13 @@ public class Planner2DPage extends JPanel {
     private void refreshLockAspectToggleVisual() {
         boolean enabled = lockAspect.isEnabled();
         if (lockAspect.isSelected()) {
-            lockAspect.setText("🔒 Aspect Locked");
+            lockAspect.setText("● Aspect Locked");
             lockAspect.setForeground(enabled ? UiKit.CHIP_ACTIVE_TEXT : UiKit.MUTED);
             lockAspect.setBackground(UiKit.CHIP_ACTIVE_BG);
             lockAspect.setOpaque(true);
             lockAspect.setBorder(new EmptyBorder(5, 9, 5, 9));
         } else {
-            lockAspect.setText("🔓 Aspect Unlocked");
+            lockAspect.setText("○ Aspect Unlocked");
             lockAspect.setForeground(UiKit.MUTED);
             lockAspect.setBackground(UiKit.WHITE);
             lockAspect.setOpaque(false);
@@ -1834,22 +1895,24 @@ public class Planner2DPage extends JPanel {
         if (sel == null) return;
 
         try {
-            int w = Integer.parseInt(wField.getText().trim());
-            int h = Integer.parseInt(hField.getText().trim());
+            double w = Double.parseDouble(wField.getText().trim());
+            double h = Double.parseDouble(hField.getText().trim());
 
-            w = Math.max(10, Math.min(1000, w));
-            h = Math.max(10, Math.min(1000, h));
+            w = clampDouble(w, 0.25, 500.0);
+            h = clampDouble(h, 0.25, 500.0);
 
             if (lockAspect.isSelected()) {
-                float aspect = sel.getH() == 0 ? 1f : (sel.getW() / (float) sel.getH());
-                int computedH = Math.max(10, Math.round(w / aspect));
+                double currentW = Math.max(0.0001, canvas.getSelectedWidthFeet());
+                double currentH = Math.max(0.0001, canvas.getSelectedHeightFeet());
+                double aspect = currentW / currentH;
+                double computedH = Math.max(0.25, w / aspect);
                 h = computedH;
                 programmaticUpdate = true;
-                hField.setText(String.valueOf(h));
+                hField.setText(formatFeet(h));
                 programmaticUpdate = false;
             }
 
-            canvas.setSelectedSize(w, h);
+            canvas.setSelectedSizeFeet(w, h);
         } catch (Exception ignored) {}
     }
 
@@ -1863,8 +1926,8 @@ public class Planner2DPage extends JPanel {
                 yField.setText("0");
                 rotField.setText("0");
                 rotationSlider.setValue(0);
-                wField.setText("0");
-                hField.setText("0");
+                wField.setText("0.00");
+                hField.setText("0.00");
                 shadingSlider.setValue(50);
 
                 deleteBtn.setEnabled(false);
@@ -1882,8 +1945,8 @@ public class Planner2DPage extends JPanel {
             rotField.setText(String.valueOf(sel.getRotation()));
             rotationSlider.setValue(sel.getRotation());
 
-            wField.setText(String.valueOf(sel.getW()));
-            hField.setText(String.valueOf(sel.getH()));
+            wField.setText(formatFeet(canvas.getSelectedWidthFeet()));
+            hField.setText(formatFeet(canvas.getSelectedHeightFeet()));
 
             shadingSlider.setValue(sel.getShadingPercent());
 
@@ -1920,5 +1983,15 @@ public class Planner2DPage extends JPanel {
 
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static String formatFeet(double value) {
+        double safe = Math.max(0, value);
+        String s = String.format(java.util.Locale.US, "%.2f", safe);
+        return s.replaceAll("0+$", "").replaceAll("\\.$", "");
     }
 }

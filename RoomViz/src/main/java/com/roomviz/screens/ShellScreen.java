@@ -16,12 +16,8 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 
 /**
- * ShellScreen
- * - Hosts TopBar + Sidebar + innerRouter screens
- * - Enforces: no shell UI if not logged in
- * - Uses per-user repositories (admin sees admin view, customer sees own designs)
- * - Applies saved UI settings before building UI
- * - Supports Presentation Mode (hide topbar + sidebar)
+ * Main shell hosting TopBar, Sidebar, and inner router screens.
+ * Handles role-based access and presentation mode.
  */
 public class ShellScreen extends JPanel {
 
@@ -107,9 +103,7 @@ public class ShellScreen extends JPanel {
         // TopBar reads session (and can show user name / logout etc.)
         topBar = new TopBar(frame, session);
 
-        /* =========================
-           Pages inside shell (ROLE-BASED)
-           ========================= */
+        // Pages inside shell (ROLE-BASED)
 
         // Everyone has Design Library + 2D + 3D + Settings
         innerRouter.add(

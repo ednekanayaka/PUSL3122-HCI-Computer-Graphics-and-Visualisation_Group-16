@@ -34,12 +34,10 @@ application {
 }
 
 java {
-    // Keep things consistent with your JDK 17 setup
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
-// test {
-//     useJUnitPlatform()
-// }
+test {
+    useJUnitPlatform()
+}

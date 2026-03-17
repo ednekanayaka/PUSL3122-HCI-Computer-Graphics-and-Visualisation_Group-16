@@ -63,7 +63,54 @@ public class CustomersPage extends JPanel {
         reload();
     }
 
-    /* ========================= Admin Guard ========================= */
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
+    // --- Admin guard ---
 
     private boolean isAdmin() {
         if (session == null || !session.isLoggedIn()) return false;
@@ -71,7 +118,7 @@ public class CustomersPage extends JPanel {
         return me != null && me.isAdmin();
     }
 
-    /* ========================= UI ========================= */
+    // --- UI ---
 
     private JComponent buildTopBar() {
         JPanel wrap = new JPanel(new BorderLayout());
@@ -247,7 +294,7 @@ public class CustomersPage extends JPanel {
         return wrap;
     }
 
-    /* ========================= Data Loading ========================= */
+    // --- Data Loading ---
 
     private void reload() {
         if (userRepo == null) {
@@ -435,7 +482,7 @@ public class CustomersPage extends JPanel {
         return p;
     }
 
-    /* ========================= Dialogs ========================= */
+    // --- Dialogs ---
 
     // Step 5: Add Customer
     private void openAddDialog() {
@@ -655,7 +702,7 @@ public class CustomersPage extends JPanel {
         }
     }
 
-    /* ========================= Dialog Helpers ========================= */
+    // --- Dialog Helpers ---
 
     private JDialog baseDialog(String title) {
         Window w = SwingUtilities.getWindowAncestor(this);
@@ -727,7 +774,7 @@ public class CustomersPage extends JPanel {
         return l;
     }
 
-    /* ========================= Utility ========================= */
+    // --- Utility ---
 
     private static String safe(String s) {
         return (s == null) ? "" : s.trim();

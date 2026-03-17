@@ -23,11 +23,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Dashboard page
- * - repository data (stats + recent list)
- * - Search updates in real-time
- * - Filters: Last 7 Days, Room Size, Room Shape
- * - Load More paginates
+ * Dashboard page with stats, search, filters, and paginated recent designs.
  */
 public class DashboardPage extends JPanel {
 
@@ -36,11 +32,11 @@ public class DashboardPage extends JPanel {
     private final Router router;
     private final AppState appState;
 
-    // dynamic sections
+    // dynamic UI elements
     private JPanel statsRowRef;
     private JPanel recentListRef;
 
-    // dashboard filters (wired)
+    // Filters and pagination
     private JTextField searchField;
     private JLabel loadMoreLabel;
 
@@ -52,7 +48,7 @@ public class DashboardPage extends JPanel {
     private String filterRoomSize = null;   // "Small" | "Medium" | "Large" | null
     private String filterRoomShape = null;  // "Square" | "Rectangular" | "L-Shape" | "Custom" | null
 
-    // chip refs so we can update active style
+    // Active filter indicators
     private JComponent chipLast7;
     private JComponent chipRoomSize;
     private JComponent chipRoomShape;
@@ -141,14 +137,14 @@ public class DashboardPage extends JPanel {
 
         JScrollPane scroller = new JScrollPane(content);
         scroller.setBorder(BorderFactory.createEmptyBorder());
-        scroller.getViewport().setOpaque(true);
+        scroller.getViewport().setOpaque(false);
         scroller.getViewport().setBackground(UiKit.BG);
         scroller.setOpaque(false);
         scroller.getVerticalScrollBar().setUnitIncrement(18);
 
         add(scroller, BorderLayout.CENTER);
 
-        // refresh when this screen is shown again
+        // refresh on show
         if (router != null) {
             router.addListener(key -> {
                 if (ScreenKeys.DASHBOARD.equals(key)) {
@@ -161,7 +157,54 @@ public class DashboardPage extends JPanel {
         refreshDynamicSections();
     }
 
-    /* ===================== Dynamic refresh ===================== */
+    // --- Dynamic refresh ---
+    
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
 
     private void refreshDynamicSections() {
         refreshStats();
@@ -325,12 +368,7 @@ public class DashboardPage extends JPanel {
         return out;
     }
 
-    /**
-     * Room size thresholds (in m²):
-     * Small < 12
-     * Medium 12–24.99
-     * Large >= 25
-     */
+    // Room size matching (Small/Medium/Large)
     private boolean matchesRoomSize(RoomSpec rs, String size) {
         if (rs == null) return false;
 
@@ -502,7 +540,7 @@ public class DashboardPage extends JPanel {
         l.repaint();
     }
 
-    /* ===================== Sections ===================== */
+    // --- Sections ---
 
     private JComponent welcomeHeader() {
         JPanel p = new JPanel();

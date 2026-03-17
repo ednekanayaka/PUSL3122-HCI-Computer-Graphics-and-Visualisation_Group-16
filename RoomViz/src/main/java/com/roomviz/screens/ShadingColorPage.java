@@ -21,21 +21,14 @@ import java.awt.event.MouseEvent;
 import java.util.List;
 
 /**
- * Shading & Color Tools page (Swing UI).
- *
- * Undo/Redo support:
- * - When Apply Changes is pressed, we push a BEFORE snapshot and record an AFTER snapshot
- *   into AppState history, so Planner2D undo/redo works for color/shading/material/lighting changes.
- *
- * - If no design is selected -> show empty state.
- * - Rebuild UI on navigation here.
+ * Shading and colour tools with undo/redo support.
  */
 public class ShadingColorPage extends JPanel {
 
     private final Router router;
     private final AppState appState;
 
-    // ===== state =====
+    // State
     private boolean afterMode = true;
     private boolean globalTab = true;
 
@@ -44,7 +37,7 @@ public class ShadingColorPage extends JPanel {
     private String material = "Matte";
     private String lighting = "Daylight";
 
-    // ===== UI refs =====
+    // UI elements
     private final JTextField hexField = new JTextField("#3B82F6");
     private final JPanel swatch = new JPanel();
     private final JLabel shadingLabel = new JLabel("Current: 50%");
@@ -99,6 +92,53 @@ public class ShadingColorPage extends JPanel {
         } catch (Throwable ignored) { }
     }
 
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
     private void rebuildUI() {
         removeAll();
 
@@ -122,7 +162,7 @@ public class ShadingColorPage extends JPanel {
         repaint();
     }
 
-    /* ========================= No Design Selected (Empty State) ========================= */
+    // --- Empty state ---
 
     private JComponent buildNoDesignState() {
         JPanel wrap = new JPanel(new GridBagLayout());
@@ -237,7 +277,7 @@ public class ShadingColorPage extends JPanel {
         rebuildUI();
     }
 
-    /* ========================= Wiring (ONLY ONCE) ========================= */
+    // --- Event wiring ---
 
     private void wireActionsOnce() {
         if (actionsWired) return;
@@ -288,7 +328,7 @@ public class ShadingColorPage extends JPanel {
         });
     }
 
-    /* ========================= Load initial state from design ========================= */
+    // --- Load design data ---
 
     private void loadInitialFromDesign() {
         if (appState == null) return;
@@ -322,7 +362,7 @@ public class ShadingColorPage extends JPanel {
         return items.get(0);
     }
 
-    /* ========================= Shell Card ========================= */
+    // --- Main layout ---
 
     private JComponent buildCardShell() {
         UiKit.RoundedPanel shell = new UiKit.RoundedPanel(16, UiKit.WHITE);
@@ -341,7 +381,7 @@ public class ShadingColorPage extends JPanel {
         return shell;
     }
 
-    /* ========================= Left Tools ========================= */
+    // --- Left tools ---
 
     private JPanel buildToolsPanel() {
         JPanel wrap = new JPanel(new BorderLayout());
@@ -432,7 +472,7 @@ public class ShadingColorPage extends JPanel {
         b.setOpaque(true);
     }
 
-    /* ========================= Right Preview ========================= */
+    // --- Right preview ---
 
     private JPanel buildPreviewSide() {
         JPanel wrap = new JPanel(new BorderLayout());
@@ -467,7 +507,7 @@ public class ShadingColorPage extends JPanel {
         return wrap;
     }
 
-    /* ========================= Components ========================= */
+    // --- Components ---
 
     private JComponent sectionTitle(String text) {
         JPanel row = new JPanel(new BorderLayout());
@@ -750,7 +790,7 @@ public class ShadingColorPage extends JPanel {
         syncUI();
     }
 
-    /* ========================= REAL AppState + Design integration (UNDO/REDO aware) ========================= */
+    // --- Design integration (Undo/Redo) ---
 
     private ApplyResult applyToDesign() {
         if (appState == null) {
@@ -767,7 +807,7 @@ public class ShadingColorPage extends JPanel {
             return new ApplyResult(false, "No furniture items exist in this design yet.\nGo to Planner 2D and add an item first.");
         }
 
-        // ✅ BEFORE snapshot for undo
+        // Before snapshot for undo
         appState.pushBeforeChange(design.getId(), items);
 
         String hex = toHex(selectedColor);
@@ -798,7 +838,7 @@ public class ShadingColorPage extends JPanel {
         design.setLastUpdatedEpochMs(System.currentTimeMillis());
         if (appState.getRepo() != null) appState.getRepo().upsert(design);
 
-        // ✅ AFTER snapshot for redo / undo correctness
+        // After snapshot for redo / undo correctness
         appState.recordAfterChange(design.getId(), items);
 
         String target = globalTab ? "Global Design (all items)" : "Selected Item";

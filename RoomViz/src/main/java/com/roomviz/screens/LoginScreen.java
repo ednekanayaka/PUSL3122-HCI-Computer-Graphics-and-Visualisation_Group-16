@@ -224,12 +224,12 @@ public class LoginScreen extends JPanel {
         secure.setFont(UiKit.scaled(secure, Font.PLAIN, 0.86f));
         card.add(secure);
 
-        // Put card top-aligned, allow scroll naturally
+        // Put card center-aligned, allow scroll naturally
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.insets = new Insets(24, 24, 24, 24);
-        gbc.anchor = GridBagConstraints.NORTH;
+        gbc.anchor = GridBagConstraints.CENTER;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 1.0;
         gbc.weighty = 1.0;

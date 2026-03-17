@@ -36,7 +36,7 @@ public class RegisterScreen extends JPanel {
     private final JPasswordField confirmPasswordField;
     private final JLabel errorLabel;
 
-    // ✅ NEW: Role select
+    // Role select
     private final JRadioButton adminRadio;
     private final JRadioButton customerRadio;
 
@@ -150,7 +150,7 @@ public class RegisterScreen extends JPanel {
         card.add(wrapField(emailField));
         card.add(Box.createVerticalStrut(14));
 
-        // ✅ NEW: Role selector
+        // Role selector
         JLabel roleLbl = label("Register as");
         card.add(roleLbl);
         card.add(Box.createVerticalStrut(6));
@@ -217,7 +217,7 @@ public class RegisterScreen extends JPanel {
             String pw = new String(passwordField.getPassword()).trim();
             String cpw = new String(confirmPasswordField.getPassword()).trim();
 
-            // ✅ NEW: selected role
+            // Selected role
             String selectedRole = customerRadio.isSelected() ? User.ROLE_CUSTOMER : User.ROLE_ADMIN;
 
             if (name.isEmpty() || name.equals("Sarah Johnson")) {
@@ -250,7 +250,7 @@ public class RegisterScreen extends JPanel {
                     return;
                 }
 
-                // ✅ Create DB user with selected role
+                // Create DB user with selected role
                 User u = userRepo.createUser(name, emailLower, pw.toCharArray(), selectedRole);
 
                 // Login session immediately
@@ -299,12 +299,12 @@ public class RegisterScreen extends JPanel {
         bottomRow.add(backToLogin);
         card.add(bottomRow);
 
-        // Put card top-aligned, allow scroll naturally
+        // Put card center-aligned, allow scroll naturally
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.insets = new Insets(24, 24, 24, 24);
-        gbc.anchor = GridBagConstraints.NORTH;
+        gbc.anchor = GridBagConstraints.CENTER;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 1.0;
         gbc.weighty = 1.0;
@@ -415,7 +415,7 @@ public class RegisterScreen extends JPanel {
         field.setCaretColor(L_TEXT);
     }
 
-    // ✅ NEW: match radio to theme (no layout change)
+    // match radio to theme
     private void styleRadio(JRadioButton r) {
         r.setOpaque(false);
         r.setForeground(L_TEXT);

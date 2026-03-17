@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_settings (
                                              user_id INTEGER PRIMARY KEY,
                                              autosave_enabled INTEGER DEFAULT 1,
-                                             default_unit TEXT DEFAULT 'cm',
+                                             default_unit TEXT DEFAULT 'ft',
                                              font_size INTEGER DEFAULT 14,
                                              high_contrast INTEGER DEFAULT 0,
                                              theme_mode TEXT DEFAULT 'light',

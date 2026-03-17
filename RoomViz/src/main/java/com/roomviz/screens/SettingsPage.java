@@ -18,17 +18,7 @@ import javax.swing.border.LineBorder;
 import java.awt.*;
 
 /**
- * Settings page UI (functional)
- *
- * - Profile fields (Full Name, Job Title, Department) are saved to SQLite per user
- * - Preferences (autosave, units, font size, contrast) are saved to SQLite per user (NO JSON)
- * - Password change uses real authentication (SQLite + PasswordUtil) (no passwordPlain)
- *
- * - Delete Account deletes:
- *   1) designs
- *   2) preferences
- *   3) the actual user record in SQLite
- * - Runs in SwingWorker to prevent UI freeze and stuck WAIT cursor
+ * Settings page for profile, password, preferences, and account management.
  */
 public class SettingsPage extends JPanel {
 
@@ -57,7 +47,7 @@ public class SettingsPage extends JPanel {
     // Preferences
     private final JToggleButton autosaveToggle = new JToggleButton();
     private final JComboBox<String> defaultUnits = new JComboBox<>(new String[]{
-            "Centimeters (cm)", "Meters (m)", "Inches (in)", "Feet (ft)"
+            "Feet (ft)", "Meters (m)"
     });
 
     // Accessibility
@@ -143,7 +133,54 @@ public class SettingsPage extends JPanel {
         loadFromRepo();
     }
 
-    /* ======================= Header ======================= */
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
+    // --- Header ---
 
     private JPanel buildHeader() {
         JPanel h = new JPanel();
@@ -166,7 +203,7 @@ public class SettingsPage extends JPanel {
         return h;
     }
 
-    /* ======================= Cards ======================= */
+    // --- Cards ---
 
     private JComponent profileCard() {
         UiKit.RoundedPanel card = cardBase();
@@ -386,7 +423,7 @@ public class SettingsPage extends JPanel {
         return card;
     }
 
-    /* ======================= Footer ======================= */
+    // --- Footer ---
 
     private JComponent buildFooterActions() {
         JPanel footer = new JPanel(new BorderLayout());
@@ -416,7 +453,7 @@ public class SettingsPage extends JPanel {
         return footer;
     }
 
-    /* ======================= LOAD/SAVE ======================= */
+    // --- Load/Save ---
 
     private void loadFromRepo() {
         // Preferences from DB (per-user)
@@ -661,7 +698,7 @@ public class SettingsPage extends JPanel {
         worker.execute();
     }
 
-    /* ======================= Help dialogs ======================= */
+    // --- Help dialogs ---
 
     private void showDocs() {
         JOptionPane.showMessageDialog(
@@ -719,7 +756,7 @@ public class SettingsPage extends JPanel {
         );
     }
 
-    /* ======================= UI helpers ======================= */
+    // --- UI helpers ---
 
     private void styleControls() {
         styleTextField(fullName);
@@ -954,20 +991,18 @@ public class SettingsPage extends JPanel {
     }
 
     private static String unitLabelToCode(String label) {
-        if (label == null) return "cm";
+        if (label == null) return "ft";
         if (label.contains("Feet")) return "ft";
-        if (label.contains("Inches")) return "in";
         if (label.contains("Meters")) return "m";
-        return "cm";
+        return "ft";
     }
 
     private static String unitCodeToLabel(String code) {
-        if (code == null) return "Centimeters (cm)";
+        if (code == null) return "Feet (ft)";
         return switch (code) {
             case "ft" -> "Feet (ft)";
-            case "in" -> "Inches (in)";
             case "m" -> "Meters (m)";
-            default -> "Centimeters (cm)";
+            default -> "Feet (ft)";
         };
     }
 

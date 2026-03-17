@@ -122,7 +122,7 @@ public class DesignLibraryPage extends JPanel {
 
         JScrollPane scroller = new JScrollPane(content);
         scroller.setBorder(BorderFactory.createEmptyBorder());
-        scroller.getViewport().setOpaque(true);
+        scroller.getViewport().setOpaque(false);
         scroller.getViewport().setBackground(UiKit.BG);
         scroller.setOpaque(false);
         scroller.getVerticalScrollBar().setUnitIncrement(18);
@@ -137,6 +137,53 @@ public class DesignLibraryPage extends JPanel {
         });
 
         refreshGrid(frame);
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
     }
 
     private boolean isCustomer() {
@@ -354,7 +401,7 @@ public class DesignLibraryPage extends JPanel {
         gridMode = true;
     }
 
-    /* ========================= Dynamic grid ========================= */
+    // Grid management
 
     private void refreshGrid(AppFrame frame) {
         if (appState == null) {
@@ -369,7 +416,7 @@ public class DesignLibraryPage extends JPanel {
 
         List<Design> designs = appState.getRepo().getAllSortedByLastUpdatedDesc();
 
-        // Optimization: Check if filters OR underlying data actually changed before rebuilding.
+        // Check if rebuild is necessary
         String q = (searchField == null) ? "" : searchField.getText();
         String placeholder = isCustomer() ? SEARCH_PLACEHOLDER_CUSTOMER : SEARCH_PLACEHOLDER_ADMIN;
 
@@ -382,7 +429,7 @@ public class DesignLibraryPage extends JPanel {
         String size = (sizeBox == null) ? "" : (String) sizeBox.getSelectedItem();
         String sort = (sortBox == null) ? "" : (String) sortBox.getSelectedItem();
 
-        // Data-aware metrics: count + timestamp of most recent design
+        // Track metrics for state change check
         int count = (designs == null) ? 0 : designs.size();
         long latest = (designs == null || designs.isEmpty()) ? 0 : designs.get(0).getLastUpdatedEpochMs();
 
@@ -725,7 +772,7 @@ public class DesignLibraryPage extends JPanel {
         card.add(main, BorderLayout.CENTER);
         card.add(actionsRow, BorderLayout.SOUTH);
 
-        // Hover Effect + double click open 2D
+        // Interactivity handlers
         card.addMouseListener(new MouseAdapter() {
             @Override public void mouseEntered(MouseEvent e) {
                 card.setFill(UiKit.CARD_HOVER);
@@ -757,7 +804,7 @@ public class DesignLibraryPage extends JPanel {
         router.show(ScreenKeys.VIEW_3D);
     }
 
-    /* ========================= helpers ========================= */
+    // Utils
 
     private static String safe(String s, String fallback) {
         if (s == null) return fallback;
@@ -784,7 +831,7 @@ public class DesignLibraryPage extends JPanel {
         }
     }
 
-    // -------- reflection helpers --------
+    // Reflection utils
 
     private static Object invoke(Object target, String methodName) {
         if (target == null || methodName == null) return null;

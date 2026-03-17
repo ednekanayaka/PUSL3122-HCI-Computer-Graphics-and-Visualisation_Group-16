@@ -82,14 +82,14 @@ public class EditDesignDialog extends JDialog {
         setUndecorated(false);
         getContentPane().setBackground(C_BG);
 
-        // ===== existing values =====
+        // --- Values ---
         RoomSpec spec = design.getRoomSpec();
         double w = spec != null ? spec.getWidth() : 0;
         double l = spec != null ? spec.getLength() : 0;
         double cutW = spec != null ? spec.getLCutWidth() : 0;
         double cutL = spec != null ? spec.getLCutLength() : 0;
 
-        // ===== fields =====
+        // --- Fields ---
         nameField = styledInput(safe(design.getDesignName(), ""));
         customerField = styledInput(safe(design.getCustomerName(), ""));
         widthField = styledInput(w > 0 ? trimZeros(w) : "");
@@ -124,7 +124,7 @@ public class EditDesignDialog extends JDialog {
         notesScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, NOTES_HEIGHT));
         notesScroll.setMinimumSize(new Dimension(CONTROL_MIN_WIDTH, NOTES_HEIGHT));
 
-        // ===== Main content =====
+        // --- UI ---
         JPanel content = new JPanel();
         content.setOpaque(true);
         content.setBackground(C_BG);
@@ -294,7 +294,7 @@ public class EditDesignDialog extends JDialog {
         setResizable(true);
     }
 
-    /* ========================= Section Card Builder ========================= */
+    // --- Layout ---
 
     private JPanel sectionCard(String icon, String title, JComponent[] fields) {
         JPanel inner = new JPanel();
@@ -372,7 +372,7 @@ public class EditDesignDialog extends JDialog {
         return card;
     }
 
-    /* ========================= Field Helpers ========================= */
+    // --- Field helpers ---
 
     private JPanel labeledField(String labelText, JComponent field) {
         JPanel wrap = new JPanel();
@@ -480,7 +480,7 @@ public class EditDesignDialog extends JDialog {
         return l;
     }
 
-    /* ========================= Buttons ========================= */
+    // --- Buttons ---
 
     private JButton accentBtn(String text) {
         JButton b = new JButton(text) {
@@ -529,7 +529,7 @@ public class EditDesignDialog extends JDialog {
         b.setMinimumSize(new Dimension(minWidth, FIELD_HEIGHT));
     }
 
-    /* ========================= Logic ========================= */
+    // --- Logic ---
 
     private void updateLShapeVisibility() {
         boolean isL = "L-Shape".equalsIgnoreCase(String.valueOf(shapeBox.getSelectedItem()));

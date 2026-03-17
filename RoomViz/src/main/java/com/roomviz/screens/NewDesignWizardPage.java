@@ -1,4 +1,3 @@
-// (FULL FILE) — paste this entire file exactly as-is:
 package com.roomviz.screens;
 
 import com.roomviz.app.AppFrame;
@@ -12,6 +11,7 @@ import com.roomviz.model.Design;
 import com.roomviz.model.DesignStatus;
 import com.roomviz.model.RoomSpec;
 import com.roomviz.model.User;
+import com.roomviz.ui.FontAwesome;
 import com.roomviz.ui.UiKit;
 
 import javax.swing.*;
@@ -22,9 +22,8 @@ import java.awt.*;
 import java.util.UUID;
 
 /**
- * New Design Wizard page
- *  Admin can create designs for customers (owner_user_id)
- *  Customer cannot create designs (view-only role)
+ * Step-by-step wizard for creating new designs.
+ * Admin role allows design creation for customers.
  */
 public class NewDesignWizardPage extends JPanel {
 
@@ -48,7 +47,7 @@ public class NewDesignWizardPage extends JPanel {
     // Step 2 fields
     private final JTextField roomWidth = new JTextField();
     private final JTextField roomLength = new JTextField();
-    private final JComboBox<String> unit = new JComboBox<>(new String[]{"ft", "cm", "m"});
+    private final JComboBox<String> unit = new JComboBox<>(new String[]{"ft", "m"});
 
     // Step 3 fields
     private final JComboBox<String> roomShape = new JComboBox<>(new String[]{"Rectangular", "Square", "L-Shape", "Custom"});
@@ -140,7 +139,7 @@ public class NewDesignWizardPage extends JPanel {
 
         JScrollPane scroller = new JScrollPane(formCenterWrap);
         scroller.setBorder(BorderFactory.createEmptyBorder());
-        scroller.getViewport().setOpaque(true);
+        scroller.getViewport().setOpaque(false);
         scroller.getViewport().setBackground(UiKit.BG);
         scroller.setOpaque(false);
         scroller.getVerticalScrollBar().setUnitIncrement(18);
@@ -151,6 +150,53 @@ public class NewDesignWizardPage extends JPanel {
         setStep(1);
     }
 
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
     private boolean isHighContrast() { return UiKit.isHighContrastMode(); }
     private Color placeholderColor() { return isHighContrast() ? UiKit.TEXT : UiKit.MUTED; }
     private Color subMuted() { return isHighContrast() ? UiKit.TEXT : UiKit.MUTED; }
@@ -159,7 +205,7 @@ public class NewDesignWizardPage extends JPanel {
         return session != null && session.isLoggedIn() && session.getCurrentUser() != null && session.getCurrentUser().isAdmin();
     }
 
-    /* ========================= Header ========================= */
+    // --- Header ---
 
     private JComponent topHeader(AppFrame frame, Router router) {
         JPanel row = new JPanel(new BorderLayout());
@@ -173,9 +219,9 @@ public class NewDesignWizardPage extends JPanel {
         icon.setPreferredSize(new Dimension(32, 32));
         icon.setLayout(new GridBagLayout());
 
-        JLabel i = new JLabel("✦");
+        JLabel i = new JLabel(FontAwesome.STAR);
         i.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.PRIMARY_DARK);
-        i.setFont(UiKit.scaled(i, Font.BOLD, 1.05f));
+        i.setFont(FontAwesome.solid(13f));
         icon.add(i);
 
         JPanel text = new JPanel();
@@ -200,10 +246,10 @@ public class NewDesignWizardPage extends JPanel {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
 
-        // ✅ Admin-only controls (customers should never see create/import actions)
+        // Admin-only controls
         if (isAdmin()) {
-            JButton saveDraft = UiKit.ghostButton("💾  Save as Draft");
-            saveDraft.setFont(UiKit.scaled(saveDraft, Font.PLAIN, 1.00f));
+            JButton saveDraft = UiKit.ghostButton(FontAwesome.FLOPPY_DISK + "  Save as Draft");
+            saveDraft.setFont(FontAwesome.solid(13f));
             saveDraft.addActionListener(e -> onSaveDraft(router));
 
             JButton importDesigns = UiKit.ghostButton("Import");
@@ -295,17 +341,17 @@ public class NewDesignWizardPage extends JPanel {
         return row;
     }
 
-    /* ========================= Steps ========================= */
+    // --- Steps ---
 
     private JComponent step1Panel() {
         JPanel p = formStack();
 
-        p.add(fieldBlock("🏷️ Design Name *", hint(PH_DESIGN, designName)));
+        p.add(fieldBlock("Design Name *", hint(PH_DESIGN, designName)));
         p.add(Box.createVerticalStrut(12));
 
         // Admin must assign to a real customer account (by email)
         if (isAdmin()) {
-            p.add(fieldBlock("👤 Customer Email *", hint(PH_CUSTOMER_EMAIL, customerName)));
+            p.add(fieldBlock("Customer Email *", hint(PH_CUSTOMER_EMAIL, customerName)));
             p.add(Box.createVerticalStrut(12));
 
             JLabel help = new JLabel("This customer will be able to view this design when they log in.");
@@ -315,20 +361,20 @@ public class NewDesignWizardPage extends JPanel {
             p.add(Box.createVerticalStrut(12));
         }
 
-        p.add(textAreaBlock("📝 Project Notes", PH_NOTES, notes));
+        p.add(textAreaBlock("Project Notes", PH_NOTES, notes));
         return p;
     }
 
     private JComponent step2Panel() {
         JPanel p = formStack();
 
-        p.add(fieldBlock("📏 Room Width *", hint(PH_WIDTH, roomWidth)));
+        p.add(fieldBlock("Room Width *", hint(PH_WIDTH, roomWidth)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(fieldBlock("📐 Room Length *", hint(PH_LENGTH, roomLength)));
+        p.add(fieldBlock("Room Length *", hint(PH_LENGTH, roomLength)));
         p.add(Box.createVerticalStrut(12));
 
-        p.add(dropdownBlock("⚖️ Units *", unit));
+        p.add(dropdownBlock("Units *", unit));
         p.add(Box.createVerticalStrut(18));
 
         JLabel info = new JLabel("Tip: Use the same units you will use in the 2D Planner.");
@@ -343,7 +389,7 @@ public class NewDesignWizardPage extends JPanel {
         JPanel p = formStack();
 
         UiKit.styleDropdown(roomShape);
-        p.add(dropdownBlock("💠 Room Shape *", roomShape));
+        p.add(dropdownBlock("Room Shape *", roomShape));
         p.add(Box.createVerticalStrut(20));
 
         lShapeDimsWrap.setOpaque(false);
@@ -381,13 +427,13 @@ public class NewDesignWizardPage extends JPanel {
         JPanel p = formStack();
 
         UiKit.styleDropdown(colorScheme);
-        p.add(dropdownBlock("🎨 Color Scheme *", colorScheme));
+        p.add(dropdownBlock("Color Scheme *", colorScheme));
         p.add(Box.createVerticalStrut(20));
 
         return p;
     }
 
-    /* ========================= Step handling ========================= */
+    // --- Step handling ---
 
     private void setStep(int step) {
         if (step < 1) step = 1;
@@ -448,7 +494,7 @@ public class NewDesignWizardPage extends JPanel {
         repaint();
     }
 
-    /* ========================= actions ========================= */
+    // --- Actions ---
 
     private void onImportData(Router router) {
         if (!isAdmin()) {
@@ -820,7 +866,7 @@ public class NewDesignWizardPage extends JPanel {
         Design d = new Design();
         d.setId(UUID.randomUUID().toString());
 
-        // ✅ Use setName() (matches your 3D page expecting getName())
+        // Use setName() for 3D page compatibility
         d.setName(dName);
 
         // admin stores customer email; customer stores their name (but customers are blocked anyway)
@@ -1012,7 +1058,7 @@ public class NewDesignWizardPage extends JPanel {
 
         Stepper() {
             setOpaque(false);
-            // ✅ FIX: we add (STEPS * 2 - 1) components: step, line, step, line, ...
+            // Render steps and horizontal lines between them
             setLayout(new GridLayout(1, (STEPS * 2) - 1, 12, 0));
             rebuild();
         }
@@ -1064,9 +1110,9 @@ public class NewDesignWizardPage extends JPanel {
             circle.setPreferredSize(new Dimension(30, 30));
             circle.setLayout(new GridBagLayout());
 
-            JLabel n = new JLabel(done ? "✓" : String.valueOf(number));
+            JLabel n = new JLabel(done ? FontAwesome.CHECK : String.valueOf(number));
             n.setForeground((isActive || done) ? Color.WHITE : (isHighContrast() ? UiKit.TEXT : UiKit.MUTED));
-            n.setFont(UiKit.scaled(n, Font.BOLD, 0.95f));
+            n.setFont(done ? FontAwesome.solid(11f) : UiKit.scaled(n, Font.BOLD, 0.95f));
             circle.add(n);
 
             JLabel t = new JLabel(label);
@@ -1084,11 +1130,11 @@ public class NewDesignWizardPage extends JPanel {
         if (settingsRepo == null) return;
 
         var s = settingsRepo.get();
-        String code = (s == null) ? "cm" : s.getDefaultUnit();
-        if (code == null) code = "cm";
+        String code = (s == null) ? "ft" : s.getDefaultUnit();
+        if (code == null) code = "ft";
 
         if ("ft".equalsIgnoreCase(code)) unit.setSelectedItem("ft");
         else if ("m".equalsIgnoreCase(code)) unit.setSelectedItem("m");
-        else unit.setSelectedItem("cm");
+        else unit.setSelectedItem("ft");
     }
 }

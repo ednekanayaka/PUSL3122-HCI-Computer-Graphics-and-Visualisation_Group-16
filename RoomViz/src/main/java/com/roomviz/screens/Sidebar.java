@@ -126,19 +126,19 @@ public class Sidebar extends JPanel {
 
         JPanel tipCard = new JPanel();
         tipCard.setOpaque(true);
-        tipCard.setBackground(isHighContrast() ? UiKit.WHITE : UiKit.TIP_BG);
+        tipCard.setBackground(isHighContrast() ? UiKit.WHITE : new Color(255, 255, 255, 25)); // Translucent white for blue background
         tipCard.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : UiKit.TIP_BORDER, 1, true),
+                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : new Color(255, 255, 255, 40), 1, true),
                 new EmptyBorder(9, 10, 9, 10)
         ));
         tipCard.setLayout(new BoxLayout(tipCard, BoxLayout.Y_AXIS));
 
         JLabel tipTitle = new JLabel("Quick Tip");
-        tipTitle.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.META_PILL_FG);
+        tipTitle.setForeground(isHighContrast() ? UiKit.TEXT : Color.WHITE);
         tipTitle.setFont(UiKit.scaled(tipTitle, Font.BOLD, 0.84f));
 
         JLabel tipText = new JLabel("<html>Pick a design from <b>Design Library</b> before opening tools.</html>");
-        tipText.setForeground(UiKit.MUTED);
+        tipText.setForeground(isHighContrast() ? UiKit.MUTED : new Color(255, 255, 255, 200));
         tipText.setFont(UiKit.scaled(tipText, Font.PLAIN, 0.82f));
 
         tipCard.add(tipTitle);
@@ -182,7 +182,7 @@ public class Sidebar extends JPanel {
         repaint();
     }
 
-    /* ===================== Small data model ===================== */
+    // --- Model ---
 
     private static class NavItem {
         final String label;
@@ -196,7 +196,7 @@ public class Sidebar extends JPanel {
         }
     }
 
-    /* ===================== Custom styled nav button ===================== */
+    // --- UI ---
 
     private static class NavButton extends JButton {
         private boolean active = false;
@@ -221,12 +221,12 @@ public class Sidebar extends JPanel {
             icon.setHorizontalAlignment(SwingConstants.CENTER);
             icon.setPreferredSize(new Dimension(24, 24));
             icon.setFont(FontAwesome.solid(13f));
-            icon.setForeground(UiKit.MUTED);
+            icon.setForeground(isHighContrast() ? UiKit.MUTED : UiKit.BRAND_MUTED);
             icon.setOpaque(false);
 
             text = new JLabel(label);
             text.setFont(UiKit.scaled(text, Font.PLAIN, 0.96f));
-            text.setForeground(UiKit.TEXT);
+            text.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_TEXT);
 
             JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
             left.setOpaque(false);
@@ -255,47 +255,46 @@ public class Sidebar extends JPanel {
                 text.setFont(UiKit.scaled(text, Font.BOLD, 0.96f));
                 icon.setForeground(activeText());
                 iconBg = isHighContrast() ? UiKit.WHITE
-                        : (UiKit.isDarkBlueMode() ? new Color(0x1E3A8A) : new Color(0xE0E7FF));
+                        : UiKit.BRAND_ACTIVE_BG;
                 iconBorder = isHighContrast() ? UiKit.BORDER
-                        : (UiKit.isDarkBlueMode() ? new Color(0x3B82F6) : new Color(0xC7D2FE));
+                        : UiKit.BRAND_BORDER;
             } else if (hover) {
-                text.setForeground(UiKit.TEXT);
+                text.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_TEXT);
                 text.setFont(UiKit.scaled(text, Font.PLAIN, 0.96f));
-                icon.setForeground(isHighContrast() ? UiKit.TEXT
-                        : (UiKit.isDarkBlueMode() ? new Color(0xCBD5E1) : new Color(0x475569)));
+                icon.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_TEXT);
                 iconBg = isHighContrast() ? UiKit.WHITE
-                        : (UiKit.isDarkBlueMode() ? new Color(0x17243B) : new Color(0xF1F5F9));
+                        : UiKit.BRAND_HOVER_BG;
                 iconBorder = isHighContrast() ? UiKit.BORDER
-                        : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE2E8F0));
+                        : UiKit.BRAND_BORDER;
             } else {
-                text.setForeground(UiKit.TEXT);
+                text.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_TEXT);
                 text.setFont(UiKit.scaled(text, Font.PLAIN, 0.96f));
-                icon.setForeground(UiKit.MUTED);
+                icon.setForeground(isHighContrast() ? UiKit.MUTED : UiKit.BRAND_MUTED);
                 iconBg = isHighContrast() ? UiKit.WHITE
-                        : (UiKit.isDarkBlueMode() ? new Color(0x111B2E) : new Color(0xFFFFFF));
+                        : new Color(0, 0, 0, 0); // Transparent for inactive
                 iconBorder = isHighContrast() ? UiKit.BORDER
-                        : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE2E8F0));
+                        : new Color(0, 0, 0, 0); // Transparent for inactive
             }
         }
 
         private Color activeText() {
             return isHighContrast() ? UiKit.TEXT
-                    : (UiKit.isDarkBlueMode() ? new Color(0xBFDBFE) : new Color(0x1E3A8A));
+                    : Color.WHITE;
         }
 
         private Color activeBg() {
             return isHighContrast() ? UiKit.WHITE
-                    : (UiKit.isDarkBlueMode() ? new Color(0x172554) : new Color(0xEEF2FF));
+                    : UiKit.BRAND_ACTIVE_BG;
         }
 
         private Color activeBorder() {
             return isHighContrast() ? UiKit.BORDER
-                    : (UiKit.isDarkBlueMode() ? new Color(0x3B82F6) : new Color(0xC7D2FE));
+                    : UiKit.BRAND_BORDER;
         }
 
         private Color hoverBg() {
             return isHighContrast() ? UiKit.WHITE
-                    : (UiKit.isDarkBlueMode() ? new Color(0x0F172A) : new Color(0xF8FAFC));
+                    : UiKit.BRAND_HOVER_BG;
         }
 
         @Override
@@ -319,7 +318,7 @@ public class Sidebar extends JPanel {
                 g2.setColor(hoverBg());
                 g2.fillRoundRect(0, 0, w, h, 14, 14);
                 g2.setColor(isHighContrast() ? UiKit.BORDER
-                        : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE2E8F0)));
+                        : UiKit.BRAND_BORDER);
                 g2.drawRoundRect(0, 0, w - 1, h - 1, 14, 14);
             }
 
@@ -345,12 +344,11 @@ public class Sidebar extends JPanel {
         int h = getHeight();
 
         // Sidebar background
-        g2.setColor(UiKit.WHITE);
+        g2.setColor(UiKit.BRAND_BG);
         g2.fillRect(0, 0, w, h);
 
-        // Right divider line
-        g2.setColor(isHighContrast() ? UiKit.BORDER
-                : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xE5E7EB)));
+        // Right divider line (subtle over the blue)
+        g2.setColor(isHighContrast() ? UiKit.BORDER : UiKit.BRAND_BORDER);
         g2.drawLine(w - 1, 0, w - 1, h);
 
         g2.dispose();

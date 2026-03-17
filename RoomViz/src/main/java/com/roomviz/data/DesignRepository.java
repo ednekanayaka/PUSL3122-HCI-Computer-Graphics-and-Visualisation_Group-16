@@ -15,15 +15,7 @@ import java.sql.*;
 import java.util.*;
 
 /**
- * SQLite-backed repository with ownership support.
- *
- * Ownership model:
- * - owner_user_id = the customer who can view this design
- * - created_by_user_id = the user who created it (admin or customer)
- *
- * View modes:
- * - Customer mode: repo filters by owner_user_id = logged-in user
- * - Admin mode: repo loads ALL designs, and can assign to any customer
+ * SQLite-backed design repository with role-based ownership filtering.
  */
 public class DesignRepository {
 
@@ -76,7 +68,7 @@ public class DesignRepository {
         return new DesignRepository(url, adminUserId, true, -1);
     }
 
-    /* ========================= public API ========================= */
+    // --- Public API ---
 
     public boolean isAdminView() { return adminView; }
 
@@ -319,7 +311,7 @@ public class DesignRepository {
         }
     }
 
-    /* ========================= DB init + load ========================= */
+    // --- DB init + load ---
 
     private void init() {
         DbBootstrap.ensureSchema(jdbcUrl);

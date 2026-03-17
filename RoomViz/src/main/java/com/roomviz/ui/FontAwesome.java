@@ -62,6 +62,12 @@ public final class FontAwesome {
     public static final String PENCIL          = "\uf303";  // fa-pencil
     public static final String USER            = "\uf007";  // fa-user
     public static final String LOCK            = "\uf023";  // fa-lock
+    public static final String LOCK_OPEN       = "\uf3c1";  // fa-lock-open
+    public static final String FLOPPY_DISK     = "\uf0c7";  // fa-floppy-disk (save)
+    public static final String TAG             = "\uf02b";  // fa-tag
+    public static final String RULER           = "\uf545";  // fa-ruler
+    public static final String SHAPES          = "\uf61f";  // fa-shapes
+    public static final String STAR            = "\uf005";  // fa-star
     public static final String WRENCH          = "\uf0ad";  // fa-wrench
     public static final String EYE             = "\uf06e";  // fa-eye
     public static final String QUESTION_CIRCLE = "\uf059";  // fa-circle-question

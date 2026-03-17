@@ -13,10 +13,7 @@ import java.awt.event.MouseEvent;
 import java.awt.geom.Ellipse2D;
 
 /**
- * Top navigation bar.
- *
- * - Left: app brand badge + name
- * - Right: user pill + logout button
+ * Top navigation bar with app brand and user pill.
  */
 public class TopBar extends JPanel {
 
@@ -34,7 +31,7 @@ public class TopBar extends JPanel {
 
         setLayout(new BorderLayout());
         setOpaque(true);
-        setBackground(UiKit.WHITE);
+        setBackground(UiKit.BRAND_BG);
         setBorder(new EmptyBorder(6, 12, 6, 12));
 
         // Left
@@ -60,10 +57,10 @@ public class TopBar extends JPanel {
     private JPanel buildUserPill() {
         Color pillFill = isHighContrast()
                 ? UiKit.WHITE
-                : (UiKit.isDarkBlueMode() ? new Color(0x0F172A) : new Color(0xF8FAFF));
+                : UiKit.BRAND_HOVER_BG;
         Color pillBorder = isHighContrast()
                 ? UiKit.BORDER
-                : (UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xD6E0F2));
+                : UiKit.BRAND_BORDER;
 
         UiKit.RoundedPanel pill = new UiKit.RoundedPanel(
                 14,
@@ -81,14 +78,14 @@ public class TopBar extends JPanel {
         JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         nameRow.setOpaque(false);
 
-        nameLabel.setForeground(isHighContrast() ? UiKit.TEXT : (UiKit.isDarkBlueMode() ? UiKit.TEXT : new Color(0x0F172A)));
+        nameLabel.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_TEXT);
         nameLabel.setFont(UiKit.scaled(nameLabel, Font.BOLD, 0.95f));
 
         JLabel statusDot = new JLabel(FontAwesome.CIRCLE);
         statusDot.setForeground(isHighContrast() ? UiKit.TEXT : new Color(0x34D399));
         statusDot.setFont(FontAwesome.solid(6f));
 
-        emailLabel.setForeground(isHighContrast() ? UiKit.TEXT : (UiKit.isDarkBlueMode() ? UiKit.MUTED : new Color(0x475569)));
+        emailLabel.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_MUTED);
         emailLabel.setFont(UiKit.scaled(emailLabel, Font.PLAIN, 0.89f));
 
         nameRow.add(nameLabel);
@@ -111,20 +108,20 @@ public class TopBar extends JPanel {
 
         JLabel badge = new JLabel("RV", SwingConstants.CENTER);
         badge.setOpaque(true);
-        badge.setBackground(isHighContrast() ? UiKit.WHITE : UiKit.PRIMARY);
-        badge.setForeground(isHighContrast() ? UiKit.TEXT : Color.WHITE);
+        badge.setBackground(isHighContrast() ? UiKit.WHITE : Color.WHITE);
+        badge.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_BG);
         badge.setFont(UiKit.scaled(badge, Font.BOLD, 0.95f));
         badge.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : UiKit.PRIMARY_DARK, 1, true),
+                BorderFactory.createLineBorder(isHighContrast() ? UiKit.BORDER : Color.WHITE, 1, true),
                 new EmptyBorder(3, 7, 3, 7)
         ));
 
         JLabel name = new JLabel("RoomViz");
-        name.setForeground(UiKit.TEXT);
+        name.setForeground(isHighContrast() ? UiKit.TEXT : UiKit.BRAND_TEXT);
         name.setFont(UiKit.scaled(name, Font.BOLD, 1.05f));
 
         JLabel sub = new JLabel("Studio");
-        sub.setForeground(UiKit.MUTED);
+        sub.setForeground(isHighContrast() ? UiKit.MUTED : UiKit.BRAND_MUTED);
         sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.90f));
 
         JPanel stack = new JPanel();
@@ -241,7 +238,7 @@ public class TopBar extends JPanel {
             g2.fill(new Ellipse2D.Double(0, 0, w, h));
 
             if (!highContrast) {
-                g2.setColor(UiKit.isDarkBlueMode() ? new Color(0x334155) : new Color(0xD6E0F2));
+                g2.setColor(UiKit.BRAND_BORDER);
                 g2.draw(new Ellipse2D.Double(0.5, 0.5, w - 1, h - 1));
             }
 

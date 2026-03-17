@@ -68,7 +68,7 @@ public class SettingsRepository {
 
             ps.setInt(1, userId);
             ps.setInt(2, settings.isAutosaveEnabled() ? 1 : 0);
-            ps.setString(3, safe(settings.getDefaultUnit(), "cm"));
+            ps.setString(3, safeUnit(settings.getDefaultUnit()));
             ps.setString(4, safe(settings.getFontSize(), "Small"));
             ps.setInt(5, settings.isHighContrast() ? 1 : 0);
             ps.setString(6, safeThemeMode(settings.getThemeMode()));
@@ -91,7 +91,7 @@ public class SettingsRepository {
         }
     }
 
-    /* ========================= DB init/load ========================= */
+    // DB init/load
 
     /**
      * Schema must come ONLY from roomviz.sql (project folder).
@@ -113,7 +113,7 @@ public class SettingsRepository {
 
                 UserSettings s = new UserSettings();
                 s.setAutosaveEnabled(rs.getInt("autosave_enabled") == 1);
-                s.setDefaultUnit(safe(rs.getString("default_unit"), "cm"));
+                s.setDefaultUnit(safeUnit(rs.getString("default_unit")));
                 s.setFontSize(safe(rs.getString("font_size"), "Small"));
                 s.setHighContrast(rs.getInt("high_contrast") == 1);
                 s.setThemeMode(safeThemeMode(rs.getString("theme_mode")));
@@ -152,6 +152,15 @@ public class SettingsRepository {
         if (s == null) return fallback;
         String t = s.trim();
         return t.isEmpty() ? fallback : t;
+    }
+
+    private static String safeUnit(String unit) {
+        if (unit == null) return "ft";
+        String t = unit.trim().toLowerCase();
+        if ("m".equals(t) || "meter".equals(t) || "meters".equals(t)) return "m";
+        if ("ft".equals(t) || "foot".equals(t) || "feet".equals(t)) return "ft";
+        // Legacy fallback: map cm/in/unknown to practical feet defaults.
+        return "ft";
     }
 
     private static String safeThemeMode(String mode) {

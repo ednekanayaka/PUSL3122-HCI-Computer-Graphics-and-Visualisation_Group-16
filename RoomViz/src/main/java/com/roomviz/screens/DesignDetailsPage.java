@@ -25,25 +25,14 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * Design Details Page
- * - Opens when user clicks a design in the Design Library.
- * - Shows real data from repository via AppState.
- *
- * - 2D View = REAL mini preview (Mini2DPreviewPanel)
- * - 3D View = REAL mini preview (Mini3DPreviewPanel)
- * - Toggle switches the preview card (CardLayout)
- * - 2D/3D toggle is wired (CardLayout preview switch)
- * - Fullscreen (opens preview dialog)
- * - Download (exports active preview PNG)
+ * Design details page with real 2D/3D previews, metadata, and actions.
  */
 public class DesignDetailsPage extends JPanel {
 
     private final Router router;
     private final AppState appState;
 
-    // Colors are read directly from UiKit.* so they adapt to dark/light mode
-
-    // ===== Dynamic refs =====
+    // Local UI components
     private JLabel headerTitle;
     private JLabel headerSubtitle;
 
@@ -56,10 +45,10 @@ public class DesignDetailsPage extends JPanel {
 
     private JTextArea notesArea;
 
-    // Preview refs
+    // Preview components
     private JPanel previewCardHost;
     private CardLayout previewCardLayout;
-    private String previewMode = "2D"; // "2D" or "3D"
+    private String previewMode = "2D"; // 2D vs 3D
 
     // Real preview components
     private Mini2DPreviewPanel mini2DPanel;
@@ -115,8 +104,54 @@ public class DesignDetailsPage extends JPanel {
         refresh(frame);
     }
 
-    /* ===================== Refresh ===================== */
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
 
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
+    // --- Refresh data ---
     private void refresh(AppFrame frame) {
         if (appState == null || appState.getCurrentDesignId() == null) {
             mainGridHost.removeAll();
@@ -224,8 +259,7 @@ public class DesignDetailsPage extends JPanel {
         if (mini3DPanel != null) mini3DPanel.setDesign(d);
     }
 
-    /* ===================== Header ===================== */
-
+    // --- Header UI ---
     private JComponent buildHeader(AppFrame frame) {
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
@@ -319,8 +353,7 @@ public class DesignDetailsPage extends JPanel {
         return header;
     }
 
-    /* ===================== Main grid ===================== */
-
+    // --- Main layout ---
     private JComponent buildMainGrid() {
         JPanel col = new JPanel();
         col.setOpaque(false);
@@ -414,8 +447,7 @@ public class DesignDetailsPage extends JPanel {
         return p;
     }
 
-    /* ===================== Preview Card ===================== */
-
+    // --- Preview ---
     private JComponent buildPreviewCard() {
         RoundedPanel card = cardPanel();
         card.setLayout(new BorderLayout());
@@ -607,7 +639,7 @@ public class DesignDetailsPage extends JPanel {
         return (mini2DPanel != null) ? mini2DPanel : previewCardHost;
     }
 
-    /* ===================== Fullscreen + Export ===================== */
+    /* --- Fullscreen & Export --- */
 
     private void openPreviewFullscreen() {
         if (appState == null || appState.getCurrentDesignId() == null) return;
@@ -728,8 +760,7 @@ public class DesignDetailsPage extends JPanel {
         return img;
     }
 
-    /* ===================== Notes / Info / Tags ===================== */
-
+    // --- Helpers ---
     private JComponent buildNotesCard() {
         RoundedPanel card = cardPanel();
         card.setLayout(new BorderLayout());

@@ -8,7 +8,7 @@ public class UserSettings {
     private String department = "Design Team";
 
     private boolean autosaveEnabled = true;
-    private String defaultUnit = "cm"; // "cm","m","in","ft"
+    private String defaultUnit = "ft"; // "ft","m"
 
     private String fontSize = "Small"; // Small|Medium|Large
     private boolean highContrast = false;
