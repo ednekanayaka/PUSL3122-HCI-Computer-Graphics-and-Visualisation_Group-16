@@ -1,0 +1,1629 @@
+package com.roomviz.screens;
+
+import com.roomviz.app.AppFrame;
+import com.roomviz.app.Router;
+import com.roomviz.app.ScreenKeys;
+import com.roomviz.data.AppState;
+import com.roomviz.data.Session;
+import com.roomviz.model.Design;
+import com.roomviz.model.FurnitureItem;
+import com.roomviz.model.RoomSpec;
+import com.roomviz.ui.FontAwesome;
+import com.roomviz.ui.UiKit;
+
+import javax.imageio.ImageIO;
+import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.geom.Path2D;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.Consumer;
+
+/**
+ * 3D visualizer using a custom Java2D raster renderer.
+ * Handles room layouts, perspective projection, and L-shape specific rendering.
+ */
+public class Visual3DPage extends JPanel {
+
+    @SuppressWarnings("unused")
+    private final AppFrame frame;
+    private final Router router;
+    private final AppState appState;
+
+    // session (used for role-based UI in empty state)
+    private final Session session;
+
+    // Shell callback: hide/show chrome (topbar/sidebar) for presentation mode
+    private final Consumer<Boolean> onPresentationModeChanged;
+    private boolean presentationMode = false;
+
+    private final JLabel toast = new JLabel("3D view updated");
+    private final JPopupMenu lightingMenu = new JPopupMenu();
+
+    private String lightingPreset = "Day";
+    private JButton lightingDropdownBtn;
+
+    private final RendererPanel renderer;
+    private JComponent viewDockRef;
+    private JComponent inspectorPanelRef;
+    private JSplitPane dockCenterSplitRef;
+    private JSplitPane visualMainSplitRef;
+
+    /**
+     * Backwards-compatible constructor (3 args)
+     */
+    public Visual3DPage(AppFrame frame, Router router, AppState appState) {
+        this(frame, router, appState, null, null);
+    }
+
+    /**
+     * Backwards-compatible constructor (4 args) with presentation callback
+     */
+    public Visual3DPage(AppFrame frame,
+                        Router router,
+                        AppState appState,
+                        Consumer<Boolean> onPresentationModeChanged) {
+        this(frame, router, appState, null, onPresentationModeChanged);
+    }
+
+    /**
+     * Recommended constructor (matches ShellScreen call)
+     */
+    public Visual3DPage(AppFrame frame,
+                        Router router,
+                        AppState appState,
+                        Session session,
+                        Consumer<Boolean> onPresentationModeChanged) {
+
+        this.frame = frame;
+        this.router = router;
+        this.appState = appState;
+        this.session = session;
+        this.onPresentationModeChanged = onPresentationModeChanged;
+
+        setLayout(new BorderLayout());
+        setBackground(UiKit.BG);
+        setBorder(new EmptyBorder(14, 14, 14, 14));
+
+        renderer = new RendererPanel();
+
+        // Build menu once (safe even if design is not selected yet)
+        buildLightingMenu();
+
+        // Build the correct UI for current state (design selected or not)
+        rebuildUI();
+
+        addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) {
+                applyResponsiveLayout();
+            }
+        });
+
+        // Refresh on navigation (CRITICAL - this page instance is created once in ShellScreen)
+        try {
+            if (router != null) {
+                router.addListener(key -> {
+                    if (ScreenKeys.VIEW_3D.equals(key)) {
+                        rebuildUI();
+                    } else {
+                        // If we are leaving 3D while presentation is ON, restore shell chrome
+                        forceExitPresentationModeIfOn();
+                    }
+                });
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        
+        if (!UiKit.isHighContrastMode() && !UiKit.isDarkBlueMode()) {
+            int w = getWidth();
+            int h = getHeight();
+            
+            // Base Gradient: Soft purple to soft cyan
+            LinearGradientPaint lgp = new LinearGradientPaint(
+                    0, 0, w, h,
+                    new float[]{ 0.0f, 0.5f, 1.0f },
+                    new Color[]{ new Color(223, 172, 255), new Color(210, 190, 250), new Color(130, 240, 240) }
+            );
+            g2.setPaint(lgp);
+            g2.fillRect(0, 0, w, h);
+            
+            // Abstract wave 1
+            g2.setPaint(new Color(255, 255, 255, 60));
+            java.awt.geom.Path2D wave = new java.awt.geom.Path2D.Double();
+            wave.moveTo(0, h * 0.4);
+            wave.curveTo(w * 0.3, h * 0.6, w * 0.6, h * 0.2, w, h * 0.5);
+            wave.lineTo(w, h);
+            wave.lineTo(0, h);
+            wave.closePath();
+            g2.fill(wave);
+            
+            // Abstract wave 2
+            g2.setPaint(new Color(255, 255, 255, 30));
+            java.awt.geom.Path2D wave2 = new java.awt.geom.Path2D.Double();
+            wave2.moveTo(0, h * 0.6);
+            wave2.curveTo(w * 0.4, h * 0.8, w * 0.8, h * 0.3, w, h * 0.7);
+            wave2.lineTo(w, h);
+            wave2.lineTo(0, h);
+            wave2.closePath();
+            g2.fill(wave2);
+
+        } else {
+            g2.setColor(UiKit.BG);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+        g2.dispose();
+    }
+
+    /** If presentation mode is ON, force it OFF (restores Shell chrome). */
+    private void forceExitPresentationModeIfOn() {
+        if (!presentationMode) return;
+        presentationMode = false;
+
+        // inform ShellScreen to show chrome again
+        try {
+            if (onPresentationModeChanged != null) onPresentationModeChanged.accept(false);
+        } catch (Throwable ignored) { }
+
+        revalidate();
+        repaint();
+    }
+
+    /** Rebuild screen depending on whether a design is selected */
+    private void rebuildUI() {
+        removeAll();
+        viewDockRef = null;
+        inspectorPanelRef = null;
+        dockCenterSplitRef = null;
+        visualMainSplitRef = null;
+
+        if (getCurrentDesign() == null) {
+            add(buildNoDesignState(), BorderLayout.CENTER);
+            revalidate();
+            repaint();
+            return;
+        }
+
+        add(buildTopBar(), BorderLayout.NORTH);
+        add(buildMain(), BorderLayout.CENTER);
+
+        revalidate();
+        repaint();
+
+        // Ensure camera fits when returning to the 3D screen (ONE-TIME, not on every resize)
+        SwingUtilities.invokeLater(() -> {
+            try { renderer.zoomToFit(); } catch (Throwable ignored) { }
+            applyResponsiveLayout();
+        });
+    }
+
+    // --- Empty state ---
+
+    private boolean isCustomer() {
+        try {
+            return session != null
+                    && session.isLoggedIn()
+                    && session.getCurrentUser() != null
+                    && session.getCurrentUser().isCustomer();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private JComponent buildNoDesignState() {
+        JPanel wrap = new JPanel(new GridBagLayout());
+        wrap.setOpaque(false);
+
+        UiKit.RoundedPanel card = new UiKit.RoundedPanel(18, UiKit.WHITE);
+        card.setBorderPaint(UiKit.BORDER);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(new EmptyBorder(28, 28, 28, 28));
+
+        JLabel title = new JLabel("Select a design first");
+        title.setForeground(UiKit.TEXT);
+        title.setFont(UiKit.scaled(title, Font.BOLD, 1.10f));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel sub = new JLabel("<html>The 3D view renders the <b>currently selected design</b>.<br/>Go to the Design Library to pick one.</html>");
+        sub.setForeground(UiKit.MUTED);
+        sub.setFont(UiKit.scaled(sub, Font.PLAIN, 0.95f));
+        sub.setBorder(new EmptyBorder(8, 0, 0, 0));
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // Use FlowLayout so buttons wrap on small windows
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
+        btnRow.setOpaque(false);
+        btnRow.setBorder(new EmptyBorder(12, 0, 0, 0));
+        btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton goLibrary = UiKit.primaryButton("Go to Design Library");
+        goLibrary.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.DESIGN_LIBRARY);
+        });
+
+        JButton backPlanner = UiKit.ghostButton("Back to 2D");
+        backPlanner.addActionListener(e -> {
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+        });
+
+        btnRow.add(goLibrary);
+        btnRow.add(backPlanner);
+
+        // Admin-only actions hidden for customers
+        if (!isCustomer()) {
+            JButton createNew = UiKit.ghostButton("Create New Design");
+            createNew.addActionListener(e -> {
+                if (router != null) router.show(ScreenKeys.NEW_DESIGN);
+            });
+
+            JButton importBtn = UiKit.ghostButton("Import Design JSON");
+            importBtn.addActionListener(e -> onImportDesigns());
+
+            btnRow.add(createNew);
+            btnRow.add(importBtn);
+        }
+
+        card.add(title);
+        card.add(sub);
+        card.add(btnRow);
+
+        Dimension pref = card.getPreferredSize();
+        card.setMinimumSize(new Dimension(0, pref.height));
+        card.setPreferredSize(new Dimension(Math.min(780, pref.width), pref.height));
+        card.setMaximumSize(new Dimension(780, Integer.MAX_VALUE));
+
+        JPanel row = new JPanel();
+        row.setOpaque(false);
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.add(Box.createHorizontalGlue());
+        row.add(card);
+        row.add(Box.createHorizontalGlue());
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(24, 18, 24, 18);
+        wrap.add(row, gbc);
+        return wrap;
+    }
+
+    private void onImportDesigns() {
+        if (isCustomer()) {
+            JOptionPane.showMessageDialog(this,
+                    "Import is admin-only.",
+                    "Access restricted", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        if (appState == null || appState.getRepo() == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Design repository not available.",
+                    "Cannot import", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import RoomViz Designs");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
+
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) return;
+
+        java.io.File in = chooser.getSelectedFile();
+        int importedCount = appState.getRepo().importFrom(in);
+
+        if (importedCount <= 0) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not import designs.\nPlease select a valid RoomViz export JSON file.",
+                    "Import Failed", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        java.util.List<Design> all = appState.getRepo().getAllSortedByLastUpdatedDesc();
+        if (!all.isEmpty()) {
+            appState.setCurrentDesignId(all.get(0).getId());
+        }
+
+        JOptionPane.showMessageDialog(this,
+                "Imported " + importedCount + " design(s) from:\n" + in.getAbsolutePath(),
+                "Import Complete", JOptionPane.INFORMATION_MESSAGE);
+
+        rebuildUI();
+    }
+
+    private void applyResponsiveLayout() {
+        if (viewDockRef == null || inspectorPanelRef == null || dockCenterSplitRef == null || visualMainSplitRef == null) {
+            return;
+        }
+
+        int width = Math.max(getWidth(), 860);
+        int dockW = clampInt((int) Math.round(width * 0.09), 66, 92);
+        int inspectorW = clampInt((int) Math.round(width * 0.20), 200, 280);
+
+        if (width < 1180) inspectorW = 210;
+        if (width < 980) {
+            dockW = 66;
+            inspectorW = 200;
+        }
+
+        viewDockRef.setMinimumSize(new Dimension(62, 0));
+        viewDockRef.setPreferredSize(new Dimension(dockW, 0));
+
+        inspectorPanelRef.setMinimumSize(new Dimension(180, 0));
+        inspectorPanelRef.setPreferredSize(new Dimension(inspectorW, 0));
+
+        int leftCenterWidth = Math.max(360, width - inspectorW - 30);
+        int divider1 = clampInt(dockW, 62, Math.max(74, leftCenterWidth - 340));
+        dockCenterSplitRef.setDividerLocation(divider1);
+
+        int divider2 = clampInt(width - inspectorW - 12, 360, Math.max(430, width - 170));
+        visualMainSplitRef.setDividerLocation(divider2);
+    }
+
+    // --- Top bar ---
+
+    private JComponent buildTopBar() {
+        UiKit.RoundedPanel bar = new UiKit.RoundedPanel(16, new Color(0x111827));
+        bar.setBorderPaint(new Color(0x0B1220));
+        bar.setLayout(new BoxLayout(bar, BoxLayout.Y_AXIS));
+        bar.setBorder(new EmptyBorder(8, 10, 8, 10));
+
+        JPanel topRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        topRow.setOpaque(false);
+
+        JLabel title = new JLabel(getDesignTitleForHeader());
+        title.setForeground(new Color(0xE5E7EB));
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 12.0f));
+
+        JLabel saved = pill("✓  Synced", new Color(0x064E3B), new Color(0x34D399));
+        topRow.add(title);
+        topRow.add(saved);
+
+        JPanel actionsRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        actionsRow.setOpaque(false);
+        actionsRow.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+        JButton back = darkButton("← Back to 2D");
+        back.addActionListener(e -> {
+            forceExitPresentationModeIfOn();
+            if (router != null) router.show(ScreenKeys.PLANNER_2D);
+        });
+
+        JButton snapshot = primaryDarkButton(FontAwesome.CAMERA + " Snapshot");
+        snapshot.addActionListener(e -> renderer.exportSnapshotDialog());
+
+        JButton present = darkButton(presentationMode ? FontAwesome.SQUARE_REGULAR + " Exit Presentation" : FontAwesome.VIDEO + " Presentation Mode");
+        present.addActionListener(e -> togglePresentationMode(present));
+
+        JLabel hint = new JLabel("Drag to orbit • Mouse wheel to zoom • F to fit");
+        hint.setForeground(new Color(0x9CA3AF));
+        hint.setFont(hint.getFont().deriveFont(Font.PLAIN, 10.0f));
+
+        actionsRow.add(back);
+        actionsRow.add(snapshot);
+        actionsRow.add(present);
+        actionsRow.add(hint);
+
+        bar.add(topRow);
+        bar.add(actionsRow);
+
+        return bar;
+    }
+
+    private void togglePresentationMode(JButton presentBtn) {
+        presentationMode = !presentationMode;
+
+        if (presentBtn != null) {
+            presentBtn.setText(presentationMode ? FontAwesome.SQUARE_REGULAR + " Exit Presentation" : FontAwesome.VIDEO + " Presentation Mode");
+        }
+
+        try {
+            if (onPresentationModeChanged != null) onPresentationModeChanged.accept(presentationMode);
+        } catch (Throwable ignored) { }
+
+        showToast();
+        revalidate();
+        repaint();
+    }
+
+    private String getDesignTitleForHeader() {
+        Design d = getCurrentDesign();
+        String name = "No design selected";
+        if (d != null) {
+            try {
+                String n = d.getName();
+                if (n != null && !n.isBlank()) name = n;
+            } catch (Throwable ignored) { }
+        }
+        return name + " – 3D View";
+    }
+
+    private JButton darkButton(String text) {
+        JButton b = new JButton(text);
+        b.setFocusPainted(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setForeground(new Color(0xE5E7EB));
+        b.setBackground(new Color(0x1F2937));
+        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.0f));
+        b.setBorder(new EmptyBorder(6, 10, 6, 10));
+        return b;
+    }
+
+    private JButton primaryDarkButton(String text) {
+        JButton b = new JButton(text);
+        b.setFocusPainted(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setForeground(Color.WHITE);
+        b.setBackground(new Color(0x2563EB));
+        b.setFont(b.getFont().deriveFont(Font.BOLD, 11.0f));
+        b.setBorder(new EmptyBorder(6, 10, 6, 10));
+        return b;
+    }
+
+    private JLabel pill(String text, Color bg, Color fg) {
+        JLabel l = new JLabel(text);
+        l.setOpaque(true);
+        l.setBackground(bg);
+        l.setForeground(fg);
+        l.setFont(l.getFont().deriveFont(Font.BOLD, 10.5f));
+        l.setBorder(new EmptyBorder(4, 8, 4, 8));
+        return l;
+    }
+
+    // --- Main layout ---
+
+    private JComponent buildMain() {
+        JPanel wrap = new JPanel(new BorderLayout(10, 10));
+        wrap.setOpaque(false);
+
+        viewDockRef = buildViewDock();
+        inspectorPanelRef = buildRightPanel();
+
+        UiKit.RoundedPanel canvasCard = new UiKit.RoundedPanel(18, Color.BLACK);
+        canvasCard.setBorderPaint(new Color(255, 255, 255, 18));
+        canvasCard.setLayout(new BorderLayout());
+        canvasCard.add(renderer, BorderLayout.CENTER);
+
+        dockCenterSplitRef = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, viewDockRef, canvasCard);
+        dockCenterSplitRef.setBorder(BorderFactory.createEmptyBorder());
+        dockCenterSplitRef.setOpaque(false);
+        dockCenterSplitRef.setContinuousLayout(true);
+        dockCenterSplitRef.setOneTouchExpandable(false);
+        dockCenterSplitRef.setDividerSize(6);
+        dockCenterSplitRef.setResizeWeight(0.0);
+
+        visualMainSplitRef = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, dockCenterSplitRef, inspectorPanelRef);
+        visualMainSplitRef.setBorder(BorderFactory.createEmptyBorder());
+        visualMainSplitRef.setOpaque(false);
+        visualMainSplitRef.setContinuousLayout(true);
+        visualMainSplitRef.setOneTouchExpandable(false);
+        visualMainSplitRef.setDividerSize(6);
+        visualMainSplitRef.setResizeWeight(1.0);
+
+        wrap.add(visualMainSplitRef, BorderLayout.CENTER);
+
+        return wrap;
+    }
+
+    private JComponent buildRightPanel() {
+        UiKit.RoundedPanel right = new UiKit.RoundedPanel(16, new Color(0x111827));
+        right.setBorderPaint(new Color(255, 255, 255, 20));
+        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
+        right.setMinimumSize(new Dimension(180, 0));
+        right.setPreferredSize(new Dimension(220, 0));
+        right.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        UiKit.RoundedPanel lightingCard = new UiKit.RoundedPanel(14, new Color(0x1E293B));
+        lightingCard.setBorderPaint(new Color(255, 255, 255, 22));
+        lightingCard.setLayout(new BoxLayout(lightingCard, BoxLayout.Y_AXIS));
+        lightingCard.setBorder(new EmptyBorder(10, 10, 10, 10));
+        lightingCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+        lightingCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel t = new JLabel("Lighting Preset");
+        t.setForeground(new Color(0xD1D5DB));
+        t.setFont(t.getFont().deriveFont(Font.BOLD, 10.8f));
+        t.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        lightingDropdownBtn = darkButton(" " + lightingPreset + "  ▾");
+        lightingDropdownBtn.setHorizontalAlignment(SwingConstants.LEFT);
+        lightingDropdownBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+        lightingDropdownBtn.addActionListener(e -> showLightingMenu(lightingDropdownBtn));
+
+        lightingCard.add(t);
+        lightingCard.add(Box.createVerticalStrut(8));
+        lightingCard.add(lightingDropdownBtn);
+
+        UiKit.RoundedPanel helpCard = new UiKit.RoundedPanel(14, new Color(0x1E293B));
+        helpCard.setBorderPaint(new Color(255, 255, 255, 22));
+        helpCard.setLayout(new BoxLayout(helpCard, BoxLayout.Y_AXIS));
+        helpCard.setBorder(new EmptyBorder(10, 10, 10, 10));
+        helpCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, 116));
+        helpCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel h1 = new JLabel("Quick Controls");
+        h1.setForeground(new Color(0xD1D5DB));
+        h1.setFont(h1.getFont().deriveFont(Font.BOLD, 10.8f));
+
+        JLabel h2 = new JLabel("R: reset camera");
+        h2.setForeground(new Color(0x9CA3AF));
+        h2.setFont(h2.getFont().deriveFont(Font.PLAIN, 11f));
+
+        JLabel h3 = new JLabel("F: zoom to fit");
+        h3.setForeground(new Color(0x9CA3AF));
+        h3.setFont(h3.getFont().deriveFont(Font.PLAIN, 11f));
+
+        JLabel h4 = new JLabel("Drag: orbit");
+        h4.setForeground(new Color(0x9CA3AF));
+        h4.setFont(h4.getFont().deriveFont(Font.PLAIN, 11f));
+
+        helpCard.add(h1);
+        helpCard.add(Box.createVerticalStrut(8));
+        helpCard.add(h2);
+        helpCard.add(Box.createVerticalStrut(4));
+        helpCard.add(h3);
+        helpCard.add(Box.createVerticalStrut(4));
+        helpCard.add(h4);
+
+        toast.setOpaque(true);
+        toast.setBackground(new Color(0x1E293B));
+        toast.setForeground(new Color(0xE5E7EB));
+        toast.setBorder(new EmptyBorder(10, 12, 10, 12));
+        toast.setVisible(false);
+        toast.setAlignmentX(Component.LEFT_ALIGNMENT);
+        toast.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+
+        right.add(lightingCard);
+        right.add(Box.createVerticalStrut(12));
+        right.add(helpCard);
+        right.add(Box.createVerticalStrut(12));
+        right.add(toast);
+        right.add(Box.createVerticalGlue());
+
+        return right;
+    }
+
+    private JComponent buildViewDock() {
+        UiKit.RoundedPanel dock = new UiKit.RoundedPanel(16, new Color(0x111827));
+        dock.setBorderPaint(new Color(255, 255, 255, 22));
+        dock.setLayout(new BoxLayout(dock, BoxLayout.Y_AXIS));
+        dock.setBorder(new EmptyBorder(8, 8, 8, 8));
+        dock.setMinimumSize(new Dimension(62, 0));
+        dock.setPreferredSize(new Dimension(76, 0));
+
+        JLabel title = new JLabel("View");
+        title.setForeground(new Color(0xD1D5DB));
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 10.2f));
+        title.setBorder(new EmptyBorder(0, 2, 6, 0));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel btns = new JPanel();
+        btns.setOpaque(false);
+        btns.setLayout(new BoxLayout(btns, BoxLayout.Y_AXIS));
+        btns.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton reset = iconDockButton(FontAwesome.ARROWS_ROTATE, "Reset camera");
+        reset.addActionListener(e -> { renderer.resetCamera(); showToast(); });
+
+        JButton center = iconDockButton(FontAwesome.CROSSHAIRS, "Center scene");
+        center.addActionListener(e -> { renderer.centerScene(); showToast(); });
+
+        JButton zoom = iconDockButton(FontAwesome.SEARCH, "Zoom to fit");
+        zoom.addActionListener(e -> { renderer.zoomToFit(); showToast(); });
+
+        JButton home = iconDockButton(FontAwesome.HOUSE, "Default view");
+        home.addActionListener(e -> { renderer.resetCamera(); renderer.zoomToFit(); showToast(); });
+
+        btns.add(reset);
+        btns.add(Box.createVerticalStrut(6));
+        btns.add(center);
+        btns.add(Box.createVerticalStrut(6));
+        btns.add(zoom);
+        btns.add(Box.createVerticalStrut(6));
+        btns.add(home);
+
+        dock.add(title);
+        dock.add(btns);
+        dock.add(Box.createVerticalGlue());
+        return dock;
+    }
+
+    private JButton iconDockButton(String icon, String tooltip) {
+        JButton b = new JButton(icon);
+        b.setToolTipText(tooltip);
+        b.setFocusPainted(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setForeground(Color.WHITE);
+        b.setBackground(new Color(0x2563EB));
+        b.setFont(FontAwesome.solid(14f));
+        b.setBorder(new EmptyBorder(7, 0, 7, 0));
+        b.setPreferredSize(new Dimension(52, 42));
+        b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        b.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return b;
+    }
+
+    // --- Lighting ---
+
+    private void buildLightingMenu() {
+        lightingMenu.setBorder(new LineBorder(new Color(0, 0, 0, 30), 1, true));
+        lightingMenu.setBackground(new Color(17, 24, 39, 245));
+
+        lightingMenu.add(menuItem("Day", FontAwesome.SUN, () -> setLighting("Day")));
+        lightingMenu.add(menuItem("Night", FontAwesome.SQUARE_REGULAR, () -> setLighting("Night")));
+        lightingMenu.add(menuItem("Sunset", FontAwesome.SUN, () -> setLighting("Sunset")));
+    }
+
+    private JMenuItem menuItem(String label, String icon, Runnable action) {
+        JMenuItem item = new JMenuItem(icon + "  " + label);
+        if (FontAwesome.SUN.equals(icon) || FontAwesome.SQUARE_REGULAR.equals(icon)) {
+             item.setFont(FontAwesome.solid(13f));
+        }
+        item.setForeground(new Color(0xE5E7EB));
+        item.setBackground(new Color(17, 24, 39, 245));
+        item.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        item.setBorder(new EmptyBorder(10, 12, 10, 12));
+        item.addActionListener(e -> action.run());
+        return item;
+    }
+
+    private void showLightingMenu(Component anchor) {
+        lightingMenu.show(anchor, 0, anchor.getHeight() + 6);
+    }
+
+    private void setLighting(String preset) {
+        lightingPreset = preset;
+        if (lightingDropdownBtn != null) lightingDropdownBtn.setText(" " + lightingPreset + "  ▾");
+        renderer.setLightingPreset(preset);
+        showToast();
+        repaint();
+    }
+
+    private void showToast() {
+        toast.setVisible(true);
+        Timer t = new Timer(1800, e -> toast.setVisible(false));
+        t.setRepeats(false);
+        t.start();
+    }
+
+    // --- Design lookup ---
+
+    private Design getCurrentDesign() {
+        if (appState == null) return null;
+        try {
+            // your AppState has safe "non-creating" behavior
+            return appState.getCurrentDesign();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    // --- Layout helpers ---
+
+    private static Double getLayoutX(Design d) { return readDouble(d, "getLayoutX"); }
+    private static Double getLayoutY(Design d) { return readDouble(d, "getLayoutY"); }
+    private static Double getLayoutW(Design d) { return readDouble(d, "getLayoutWidth"); }
+    private static Double getLayoutH(Design d) { return readDouble(d, "getLayoutHeight"); }
+
+    private static Double readDouble(Object obj, String method) {
+        if (obj == null) return null;
+        try {
+            Object v = obj.getClass().getMethod(method).invoke(obj);
+            if (v == null) return null;
+            if (v instanceof Number) return ((Number) v).doubleValue();
+            return null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    // --- Renderer ---
+
+    private class RendererPanel extends JPanel {
+
+        private double yaw = Math.toRadians(35);
+        private double pitch = Math.toRadians(-22);
+        private double dist = 820;
+
+        private Vec3 sceneCenter = new Vec3(0, 0, 0);
+        private Point lastMouse = null;
+
+        private String preset = "Day";
+
+        // Constant camera lens (stable on resize)
+        private final double fovDeg = 58.0;
+        private final double fitPadding = 1.18;
+
+        RendererPanel() {
+            setOpaque(true);
+            setBackground(Color.BLACK);
+            setFocusable(true);
+
+            MouseAdapter ma = new MouseAdapter() {
+                @Override public void mousePressed(MouseEvent e) {
+                    requestFocusInWindow();
+                    lastMouse = e.getPoint();
+                }
+                @Override public void mouseDragged(MouseEvent e) {
+                    if (lastMouse == null) return;
+                    int dx = e.getX() - lastMouse.x;
+                    int dy = e.getY() - lastMouse.y;
+
+                    yaw += dx * 0.0085;
+                    pitch += dy * 0.0085;
+                    pitch = clamp(pitch, Math.toRadians(-80), Math.toRadians(10));
+
+                    lastMouse = e.getPoint();
+                    repaint();
+                }
+                @Override public void mouseReleased(MouseEvent e) {
+                    lastMouse = null;
+                }
+            };
+            addMouseListener(ma);
+            addMouseMotionListener(ma);
+
+            addMouseWheelListener(e -> {
+                double delta = e.getPreciseWheelRotation();
+                dist *= (1.0 + delta * 0.10);
+                dist = clamp(dist, 220, 2600);
+                repaint();
+            });
+
+            getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "resetCam");
+            getActionMap().put("resetCam", new AbstractAction() {
+                @Override public void actionPerformed(ActionEvent e) {
+                    resetCamera();
+                    showToast();
+                }
+            });
+
+            getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_F, 0), "fitCam");
+            getActionMap().put("fitCam", new AbstractAction() {
+                @Override public void actionPerformed(ActionEvent e) {
+                    zoomToFit();
+                    showToast();
+                }
+            });
+
+            addComponentListener(new ComponentAdapter() {
+                @Override public void componentResized(ComponentEvent e) {
+                    repaint();
+                }
+            });
+        }
+
+        void setLightingPreset(String p) {
+            preset = (p == null) ? "Day" : p;
+            repaint();
+        }
+
+        void resetCamera() {
+            yaw = Math.toRadians(35);
+            pitch = Math.toRadians(-22);
+            dist = 820;
+            repaint();
+        }
+
+        void centerScene() {
+            computeSceneCenter();
+            repaint();
+        }
+
+        void zoomToFit() {
+            Design d = getCurrentDesign();
+            if (d == null) return;
+
+            double roomW = 520;
+            double roomD = 520;
+
+            Double lw = getLayoutW(d);
+            Double lh = getLayoutH(d);
+
+            if (lw != null && lh != null) {
+                roomW = lw;
+                roomD = lh;
+            } else if (d.getRoomSpec() != null && d.getRoomSpec().getWidth() > 0 && d.getRoomSpec().getLength() > 0) {
+                roomW = d.getRoomSpec().getWidth();
+                roomD = d.getRoomSpec().getLength();
+            } else {
+                Bounds b = computeSceneBounds();
+                roomW = b.w;
+                roomD = b.d;
+            }
+            // Scale proportionally so larger dimension is at least 520
+            double maxDim = Math.max(roomW, roomD);
+            if (maxDim < 520 && maxDim > 0) {
+                double s = 520.0 / maxDim;
+                roomW *= s;
+                roomD *= s;
+            }
+
+            double maxSpan = Math.max(roomW, roomD) * fitPadding;
+
+            double fovRad = Math.toRadians(fovDeg);
+            double half = maxSpan * 0.5;
+            double needed = half / Math.tan(fovRad * 0.5);
+
+            dist = clamp(needed, 260, 2600);
+            repaint();
+        }
+
+        void exportSnapshotDialog() {
+            try {
+                JFileChooser fc = new JFileChooser();
+                fc.setDialogTitle("Export Snapshot (PNG)");
+                int res = fc.showSaveDialog(this);
+                if (res != JFileChooser.APPROVE_OPTION) return;
+
+                java.io.File f = fc.getSelectedFile();
+                String name = f.getName().toLowerCase(Locale.ENGLISH);
+                if (!name.endsWith(".png")) f = new java.io.File(f.getParentFile(), f.getName() + ".png");
+
+                BufferedImage img = new BufferedImage(getWidth(), getHeight(), BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2 = img.createGraphics();
+                paint(g2);
+                g2.dispose();
+
+                ImageIO.write(img, "png", f);
+
+                JOptionPane.showMessageDialog(this,
+                        "Snapshot saved:\n" + f.getAbsolutePath(),
+                        "Saved",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Snapshot failed:\n" + ex.getMessage(),
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+
+            if (getCurrentDesign() == null) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setColor(Color.BLACK);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.setColor(new Color(255, 255, 255, 180));
+                g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 12f));
+                g2.drawString("No design selected. Go to Design Library.", 18, 24);
+                g2.dispose();
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+
+            paintBackground(g2, w, h);
+
+            List<Face> faces = buildSceneFaces();
+            drawFaces(g2, faces, w, h);
+
+            paintHud(g2, w, h);
+
+            g2.dispose();
+        }
+
+        private void paintBackground(Graphics2D g2, int w, int h) {
+            Color top = new Color(0x0B1220);
+            Color bot = new Color(0x05070D);
+
+            if ("Night".equalsIgnoreCase(preset)) {
+                top = new Color(0x050A14);
+                bot = new Color(0x02040A);
+            } else if ("Sunset".equalsIgnoreCase(preset)) {
+                top = new Color(0x1A0F14);
+                bot = new Color(0x05070D);
+            }
+
+            GradientPaint gp = new GradientPaint(0, 0, top, 0, h, bot);
+            g2.setPaint(gp);
+            g2.fillRect(0, 0, w, h);
+
+            if ("Night".equalsIgnoreCase(preset)) {
+                g2.setColor(new Color(255, 255, 255, 40));
+                for (int i = 0; i < 60; i++) {
+                    int x = (i * 73) % Math.max(1, w);
+                    int y = (i * 91) % Math.max(1, h / 2);
+                    g2.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+
+        private void paintHud(Graphics2D g2, int w, int h) {
+            g2.setColor(new Color(255, 255, 255, 160));
+            g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 11.5f));
+            g2.drawString("Drag: orbit   Wheel: zoom   R: reset   F: fit", 16, h - 16);
+        }
+
+        /* ========================== ROOM SHAPE HELPERS (3D) ========================== */
+
+        private boolean isLShape(RoomSpec spec) {
+            if (spec == null) return false;
+            String s = spec.getShape();
+            if (s == null) return false;
+            return "L-Shape".equalsIgnoreCase(s.trim())
+                    && spec.getLCutWidth() > 0
+                    && spec.getLCutLength() > 0;
+        }
+
+        private int cutWpx(RoomSpec spec, double roomW) {
+            double outerW = Math.max(0.0001, spec.getWidth());
+            int cut = (int) Math.round(roomW * (spec.getLCutWidth() / outerW));
+            return Math.max(1, Math.min((int) roomW - 1, cut));
+        }
+
+        private int cutDpx(RoomSpec spec, double roomD) {
+            double outerL = Math.max(0.0001, spec.getLength());
+            int cut = (int) Math.round(roomD * (spec.getLCutLength() / outerL));
+            return Math.max(1, Math.min((int) roomD - 1, cut));
+        }
+
+        private List<Face> buildSceneFaces() {
+            computeSceneCenter();
+            List<Face> faces = new ArrayList<>();
+
+            Design d = getCurrentDesign();
+            if (d == null) return faces;
+
+            RoomSpec spec = d.getRoomSpec();
+
+            double roomW = 520;
+            double roomD = 520;
+
+            Double lw = getLayoutW(d);
+            Double lh = getLayoutH(d);
+
+            if (lw != null && lh != null) {
+                roomW = lw;
+                roomD = lh;
+            } else if (spec != null && spec.getWidth() > 0 && spec.getLength() > 0) {
+                roomW = spec.getWidth();
+                roomD = spec.getLength();
+            } else {
+                Bounds b = computeSceneBounds();
+                roomW = b.w;
+                roomD = b.d;
+            }
+            // Scale proportionally so larger dimension is at least 520
+            double maxDim = Math.max(roomW, roomD);
+            if (maxDim < 520 && maxDim > 0) {
+                double s = 520.0 / maxDim;
+                roomW *= s;
+                roomD *= s;
+            }
+
+            double floorY = 0;
+            double wallH = Math.max(260, Math.min(520, Math.max(roomW, roomD) * 0.45));
+
+            double x0 = sceneCenter.x - roomW / 2;
+            double x1 = sceneCenter.x + roomW / 2;
+            double z0 = sceneCenter.z - roomD / 2;
+            double z1 = sceneCenter.z + roomD / 2;
+
+            Color[] schemeCols = schemeColors(spec, preset);
+            Color floorCol = schemeCols[0];
+            Color wallCol = schemeCols[1];
+
+            if (spec != null && isLShape(spec)) {
+                int cutW = cutWpx(spec, roomW);
+                int cutD = cutDpx(spec, roomD);
+
+                double xCut = x1 - cutW;
+                double zCut = z0 + cutD;
+
+                faces.add(faceQuad(
+                        new Vec3(x0, floorY, z0),
+                        new Vec3(xCut, floorY, z0),
+                        new Vec3(xCut, floorY, z1),
+                        new Vec3(x0, floorY, z1),
+                        floorCol
+                ));
+
+                faces.add(faceQuad(
+                        new Vec3(xCut, floorY, zCut),
+                        new Vec3(x1,   floorY, zCut),
+                        new Vec3(x1,   floorY, z1),
+                        new Vec3(xCut, floorY, z1),
+                        floorCol
+                ));
+
+                addWallSegment(faces, x0,   z0,   xCut, z0,   floorY, wallH, wallCol);
+                addWallSegment(faces, xCut, z0,   xCut, zCut, floorY, wallH, wallCol.darker());
+                addWallSegment(faces, xCut, zCut, x1,   zCut, floorY, wallH, wallCol);
+                addWallSegment(faces, x1,   zCut, x1,   z1,   floorY, wallH, wallCol.darker());
+                addWallSegment(faces, x1,   z1,   x0,   z1,   floorY, wallH, wallCol);
+                addWallSegment(faces, x0,   z1,   x0,   z0,   floorY, wallH, wallCol.darker());
+
+            } else {
+                faces.add(faceQuad(
+                        new Vec3(x0, floorY, z0),
+                        new Vec3(x1, floorY, z0),
+                        new Vec3(x1, floorY, z1),
+                        new Vec3(x0, floorY, z1),
+                        floorCol
+                ));
+
+                addWallSegment(faces, x0, z0, x1, z0, floorY, wallH, wallCol);
+                addWallSegment(faces, x1, z0, x1, z1, floorY, wallH, wallCol.darker());
+                addWallSegment(faces, x1, z1, x0, z1, floorY, wallH, wallCol);
+                addWallSegment(faces, x0, z1, x0, z0, floorY, wallH, wallCol.darker());
+            }
+
+            List<FurnitureItem> items = (d.getItems() == null) ? List.of() : d.getItems();
+            for (FurnitureItem it : items) faces.addAll(buildFurnitureFaces(it));
+
+            return faces;
+        }
+
+        private List<Face> buildFurnitureFaces(FurnitureItem it) {
+            List<Face> faces = new ArrayList<>();
+
+            double w = Math.max(10, safeW(it));
+            double d = Math.max(10, safeH(it));
+            double rot = Math.toRadians(safeRotationDeg(it));
+
+            Color base = parseHex(safeColorHex(it), new Color(0x3B82F6));
+            double shadeMul = 0.60 + (clamp(safeShading(it), 0, 100) / 100.0) * 0.70;
+            base = applyBrightness(base, shadeMul);
+
+            Design design = getCurrentDesign();
+            if (design == null) return faces;
+
+            double roomW = 520;
+            double roomD = 520;
+
+            // Raw layout bounds (pixel space from 2D canvas)
+            Double lw = getLayoutW(design);
+            Double lh = getLayoutH(design);
+            double rawRoomW = (lw != null) ? lw : 520;
+            double rawRoomD = (lh != null) ? lh : 520;
+
+            // 3D room dimensions: use layout bounds or RoomSpec
+            RoomSpec fSpec = design.getRoomSpec();
+            if (lw != null && lh != null) {
+                roomW = lw;
+                roomD = lh;
+            } else if (fSpec != null && fSpec.getWidth() > 0 && fSpec.getLength() > 0) {
+                roomW = fSpec.getWidth();
+                roomD = fSpec.getLength();
+            }
+            // Scale proportionally so larger dimension is at least 520
+            double maxFDim = Math.max(roomW, roomD);
+            if (maxFDim < 520 && maxFDim > 0) {
+                double s = 520.0 / maxFDim;
+                roomW *= s;
+                roomD *= s;
+            }
+
+            // Normalize furniture position to 0..1 relative to 2D layout, then map to 3D
+            double lx = safeX(it);
+            double lz = safeY(it);
+
+            Double lxo = getLayoutX(design);
+            Double lyo = getLayoutY(design);
+            if (lxo != null && lyo != null) {
+                lx = safeX(it) - lxo;
+                lz = safeY(it) - lyo;
+            }
+
+            // Convert pixel pos to ratio (0..1), then scale to 3D room dims
+            double ratioX = lx / Math.max(1, rawRoomW);
+            double ratioZ = lz / Math.max(1, rawRoomD);
+            double ratioW = w / Math.max(1, rawRoomW);
+            double ratioD = d / Math.max(1, rawRoomD);
+
+            double fx = ratioX * roomW;
+            double fz = ratioZ * roomD;
+            double fw = ratioW * roomW;
+            double fd = ratioD * roomD;
+
+            Vec3 c = new Vec3(
+                    (fx + fw / 2.0) - roomW / 2.0 + sceneCenter.x,
+                    0,
+                    (fz + fd / 2.0) - roomD / 2.0 + sceneCenter.z
+            );
+
+            String kind = safeKind(it);
+
+            if ("TABLE_ROUND".equals(kind)) {
+                buildRoundTable(faces, c, fw, fd, rot, base);
+            } else if ("TABLE_RECT".equals(kind)) {
+                buildRectTable(faces, c, fw, fd, rot, base);
+            } else if ("CHAIR".equals(kind)) {
+                buildChair(faces, c, fw, fd, rot, base);
+            } else {
+                addBox(faces, c, fw, 60, fd, rot, base);
+            }
+
+            return faces;
+        }
+
+        private void buildChair(List<Face> faces, Vec3 c, double w, double d, double rot, Color color) {
+            double seatH = 34;
+            double seatThick = 4;
+            double backH = 38;
+            double legDim = Math.min(w, d) * 0.12;
+            Color legCol = color.darker();
+
+            double lx = w / 2 - legDim / 2;
+            double lz = d / 2 - legDim / 2;
+
+            addBoxWrapper(faces, c, -lx, 0, -lz, legDim, seatH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, -lz, legDim, seatH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, +lz, legDim, seatH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, -lx, 0, +lz, legDim, seatH, legDim, rot, legCol);
+
+            addBoxWrapper(faces, c, 0, seatH, 0, w, seatThick, d, rot, color);
+
+            double backThick = 5;
+            addBoxWrapper(faces, c, 0, seatH + seatThick, -(d / 2 - backThick / 2), w, backH, backThick, rot, color);
+        }
+
+        private void buildRectTable(List<Face> faces, Vec3 c, double w, double d, double rot, Color color) {
+            double tableH = 50;
+            double topThick = 4;
+            double legDim = Math.min(w, d) * 0.08;
+            Color legCol = color.darker();
+
+            double lx = w / 2 - legDim;
+            double lz = d / 2 - legDim;
+
+            addBoxWrapper(faces, c, -lx, 0, -lz, legDim, tableH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, -lz, legDim, tableH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, +lx, 0, +lz, legDim, tableH, legDim, rot, legCol);
+            addBoxWrapper(faces, c, -lx, 0, +lz, legDim, tableH, legDim, rot, legCol);
+
+            addBoxWrapper(faces, c, 0, tableH, 0, w, topThick, d, rot, color);
+        }
+
+        private void buildRoundTable(List<Face> faces, Vec3 c, double w, double d, double rot, Color color) {
+            double tableH = 50;
+            double topThick = 4;
+            double radius = Math.min(w, d) / 2.0;
+
+            double pillarR = radius * 0.15;
+            addPrismWrapper(faces, c, 0, 0, 0, pillarR, tableH, rot, color.darker());
+            addPrismWrapper(faces, c, 0, 0, 0, radius * 0.4, 2, rot, color.darker());
+            addPrismWrapper(faces, c, 0, tableH, 0, radius, topThick, rot, color);
+        }
+
+        private void addBoxWrapper(List<Face> faces, Vec3 c, double offX, double offY, double offZ,
+                                   double w, double h, double d, double rot, Color color) {
+            Vec3 off = rotY(new Vec3(offX, 0, offZ), rot);
+            Vec3 finalC = new Vec3(c.x + off.x, c.y + offY, c.z + off.z);
+            addBox(faces, finalC, w, h, d, rot, color);
+        }
+
+        private void addPrismWrapper(List<Face> faces, Vec3 c, double offX, double offY, double offZ,
+                                     double r, double h, double rot, Color color) {
+            Vec3 off = rotY(new Vec3(offX, 0, offZ), rot);
+            Vec3 finalC = new Vec3(c.x + off.x, c.y + offY, c.z + off.z);
+            addPrism(faces, finalC, r, h, rot, color);
+        }
+
+        private void addBox(List<Face> faces, Vec3 c, double w, double h, double d, double rot, Color color) {
+            double rx = w / 2;
+            double rz = d / 2;
+
+            Vec3 b0 = new Vec3(-rx, 0, -rz);
+            Vec3 b1 = new Vec3(+rx, 0, -rz);
+            Vec3 b2 = new Vec3(+rx, 0, +rz);
+            Vec3 b3 = new Vec3(-rx, 0, +rz);
+
+            Vec3 t0 = new Vec3(-rx, h, -rz);
+            Vec3 t1 = new Vec3(+rx, h, -rz);
+            Vec3 t2 = new Vec3(+rx, h, +rz);
+            Vec3 t3 = new Vec3(-rx, h, +rz);
+
+            Vec3[] v = new Vec3[]{b0, b1, b2, b3, t0, t1, t2, t3};
+            for (int i = 0; i < 8; i++) v[i] = rotY(v[i], rot).add(c);
+
+            Vec3 lightDir = getLightDir();
+            double gloss = 0.05;
+
+            faces.add(faceQuadWithLighting(v[4], v[5], v[6], v[7], color, lightDir, 1.0 + gloss));
+            faces.add(faceQuadWithLighting(v[0], v[1], v[5], v[4], color, lightDir, 0.72));
+            faces.add(faceQuadWithLighting(v[1], v[2], v[6], v[5], color, lightDir, 0.80));
+            faces.add(faceQuadWithLighting(v[2], v[3], v[7], v[6], color, lightDir, 0.86));
+            faces.add(faceQuadWithLighting(v[3], v[0], v[4], v[7], color, lightDir, 0.76));
+        }
+
+        private void addPrism(List<Face> faces, Vec3 c, double r, double h, double rot, Color color) {
+            int sides = 12;
+            Vec3[] bot = new Vec3[sides];
+            Vec3[] top = new Vec3[sides];
+
+            for (int i = 0; i < sides; i++) {
+                double ang = (2.0 * Math.PI * i) / sides;
+                double lx = Math.cos(ang) * r;
+                double lz = Math.sin(ang) * r;
+                bot[i] = rotY(new Vec3(lx, 0, lz), rot).add(c);
+                top[i] = rotY(new Vec3(lx, h, lz), rot).add(c);
+            }
+
+            Vec3 lightDir = getLightDir();
+
+            faces.add(new Face(java.util.Arrays.asList(top), applyBrightness(color, 1.05), 0));
+
+            for (int i = 0; i < sides; i++) {
+                int next = (i + 1) % sides;
+                faces.add(faceQuadWithLighting(bot[i], bot[next], top[next], top[i], color, lightDir, 0.8));
+            }
+        }
+
+        private Vec3 getLightDir() {
+            Vec3 lightDir = new Vec3(-0.35, 0.85, -0.35);
+            if ("Night".equalsIgnoreCase(preset)) lightDir = new Vec3(-0.25, 0.60, -0.20);
+            if ("Sunset".equalsIgnoreCase(preset)) lightDir = new Vec3(0.55, 0.75, -0.15);
+            return lightDir;
+        }
+
+        private Face faceQuad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Color col) {
+            return new Face(List.of(a, b, c, d), col, 0);
+        }
+
+        private Face faceQuadWithLighting(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Color base, Vec3 lightDir, double baseMul) {
+            Vec3 u = new Vec3(b.x - a.x, b.y - a.y, b.z - a.z);
+            Vec3 v = new Vec3(d.x - a.x, d.y - a.y, d.z - a.z);
+            Vec3 n = cross(u, v);
+
+            double nLen = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+            if (nLen > 0) n = new Vec3(n.x / nLen, n.y / nLen, n.z / nLen);
+
+            double lLen = Math.sqrt(lightDir.x * lightDir.x + lightDir.y * lightDir.y + lightDir.z * lightDir.z);
+            Vec3 ld = lightDir;
+            if (lLen > 0) ld = new Vec3(lightDir.x / lLen, lightDir.y / lLen, lightDir.z / lLen);
+
+            double dot = clamp(n.x * ld.x + n.y * ld.y + n.z * ld.z, -1, 1);
+            double lit = 0.65 + Math.max(0, dot) * 0.55;
+
+            if ("Night".equalsIgnoreCase(preset)) lit *= 0.82;
+            if ("Sunset".equalsIgnoreCase(preset)) lit *= 0.94;
+
+            Color col = applyBrightness(base, lit * baseMul);
+            return new Face(List.of(a, b, c, d), col, 0);
+        }
+
+        private void drawFaces(Graphics2D g2, List<Face> faces, int w, int h) {
+            List<Face> projected = new ArrayList<>(faces.size());
+
+            for (Face f : faces) {
+                List<Vec3> camPts = new ArrayList<>(f.pts.size());
+                double depthSum = 0;
+                boolean anyVisible = false;
+
+                for (Vec3 p : f.pts) {
+                    Vec3 cam = worldToCamera(p);
+                    camPts.add(cam);
+                    depthSum += cam.z;
+                    if (cam.z > 5) anyVisible = true;
+                }
+
+                if (!anyVisible) continue;
+                projected.add(new Face(camPts, f.color, depthSum / f.pts.size()));
+            }
+
+            projected.sort(Comparator.comparingDouble(a -> -a.avgDepth));
+
+            double fovRad = Math.toRadians(fovDeg);
+            double focal = (Math.min(w, h) * 0.5) / Math.tan(fovRad * 0.5);
+
+            double cx = w * 0.5;
+            double cy = h * 0.52;
+
+            for (Face f : projected) {
+                Path2D path = new Path2D.Double();
+                boolean started = false;
+                boolean clipped = false;
+
+                for (Vec3 p : f.pts) {
+                    if (p.z <= 5) { clipped = true; break; }
+                    double sx = cx + (p.x / p.z) * focal;
+                    double sy = cy - (p.y / p.z) * focal;
+
+                    if (!started) { path.moveTo(sx, sy); started = true; }
+                    else { path.lineTo(sx, sy); }
+                }
+
+                if (clipped || !started) continue;
+                path.closePath();
+
+                g2.setColor(f.color);
+                g2.fill(path);
+
+                g2.setColor(new Color(0, 0, 0, 80));
+                g2.setStroke(new BasicStroke(1f));
+                g2.draw(path);
+            }
+        }
+
+        private Vec3 worldToCamera(Vec3 world) {
+            Vec3 p = world.sub(sceneCenter);
+            p = rotateY(p, yaw);
+            p = rotateX(p, pitch);
+            return new Vec3(p.x, p.y, p.z + dist);
+        }
+
+        private void computeSceneCenter() {
+            Design d = getCurrentDesign();
+            if (d == null) return;
+
+            Double lx = getLayoutX(d);
+            Double ly = getLayoutY(d);
+            Double lw = getLayoutW(d);
+            Double lh = getLayoutH(d);
+
+            if (lx != null && ly != null && lw != null && lh != null) {
+                double cx = lx + lw / 2.0;
+                double cz = ly + lh / 2.0;
+                sceneCenter = new Vec3(cx, 0, cz);
+                return;
+            }
+
+            Bounds b = computeSceneBounds();
+            sceneCenter = new Vec3(b.cx, 0, b.cz);
+        }
+
+        private Bounds computeSceneBounds() {
+            Design d = getCurrentDesign();
+            List<FurnitureItem> items = (d == null || d.getItems() == null) ? List.of() : d.getItems();
+
+            double minX = Double.POSITIVE_INFINITY;
+            double minZ = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double maxZ = Double.NEGATIVE_INFINITY;
+
+            for (FurnitureItem it : items) {
+                double x0 = safeX(it);
+                double z0 = safeY(it);
+                double x1 = x0 + Math.max(10, safeW(it));
+                double z1 = z0 + Math.max(10, safeH(it));
+
+                minX = Math.min(minX, Math.min(x0, x1));
+                maxX = Math.max(maxX, Math.max(x0, x1));
+                minZ = Math.min(minZ, Math.min(z0, z1));
+                maxZ = Math.max(maxZ, Math.max(z0, z1));
+            }
+
+            if (minX == Double.POSITIVE_INFINITY) {
+                minX = -260; maxX = 260;
+                minZ = -260; maxZ = 260;
+            }
+
+            double pad = 180;
+            minX -= pad; maxX += pad;
+            minZ -= pad; maxZ += pad;
+
+            double w = Math.max(520, maxX - minX);
+            double dpth = Math.max(520, maxZ - minZ);
+
+            double cx = (minX + maxX) / 2.0;
+            double cz = (minZ + maxZ) / 2.0;
+
+            minX = cx - w / 2.0;
+            minZ = cz - dpth / 2.0;
+
+            return new Bounds(minX, minZ, w, dpth);
+        }
+
+        /* ===== Math helpers ===== */
+
+        private Vec3 cross(Vec3 a, Vec3 b) {
+            return new Vec3(
+                    a.y * b.z - a.z * b.y,
+                    a.z * b.x - a.x * b.z,
+                    a.x * b.y - a.y * b.x
+            );
+        }
+
+        private Vec3 rotY(Vec3 v, double rad) {
+            double c = Math.cos(rad);
+            double s = Math.sin(rad);
+            return new Vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+        }
+
+        private Vec3 rotateY(Vec3 v, double rad) {
+            double c = Math.cos(rad);
+            double s = Math.sin(rad);
+            return new Vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+        }
+
+        private Vec3 rotateX(Vec3 v, double rad) {
+            double c = Math.cos(rad);
+            double s = Math.sin(rad);
+            return new Vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+        }
+
+        private Color parseHex(String hex, Color fallback) {
+            try {
+                if (hex == null) return fallback;
+                String h = hex.trim();
+                if (!h.startsWith("#")) h = "#" + h;
+                return Color.decode(h);
+            } catch (Exception e) {
+                return fallback;
+            }
+        }
+
+        private Color applyBrightness(Color c, double mul) {
+            int r = clampInt(Math.round((float) (c.getRed() * mul)), 0, 255);
+            int g = clampInt(Math.round((float) (c.getGreen() * mul)), 0, 255);
+            int b = clampInt(Math.round((float) (c.getBlue() * mul)), 0, 255);
+            return new Color(r, g, b, c.getAlpha());
+        }
+
+        private double clamp(double v, double lo, double hi) {
+            return Math.max(lo, Math.min(hi, v));
+        }
+
+        private int clampInt(long v, long lo, long hi) {
+            long clamped = Math.max(lo, Math.min(hi, v));
+            return (int) clamped;
+        }
+
+        private static class Bounds {
+            final double w, d, cx, cz;
+            Bounds(double x, double z, double w, double d) {
+                this.w = w;
+                this.d = d;
+                this.cx = x + w / 2.0;
+                this.cz = z + d / 2.0;
+            }
+        }
+
+        private void addWallSegment(List<Face> faces,
+                                    double ax, double az, double bx, double bz,
+                                    double floorY, double wallH, Color col) {
+            faces.add(faceQuad(
+                    new Vec3(ax, floorY, az),
+                    new Vec3(bx, floorY, bz),
+                    new Vec3(bx, floorY + wallH, bz),
+                    new Vec3(ax, floorY + wallH, az),
+                    col
+            ));
+        }
+
+        private Color[] schemeColors(RoomSpec spec, String preset) {
+            String scheme = (spec == null || spec.getColorScheme() == null)
+                    ? "neutral"
+                    : spec.getColorScheme().toLowerCase(Locale.ENGLISH);
+
+            Color floor = new Color(40, 48, 70, 220);
+            Color wall = new Color(24, 30, 46, 210);
+
+            if (scheme.contains("warm")) {
+                floor = new Color(72, 54, 46, 220);
+                wall = new Color(44, 32, 28, 210);
+            } else if (scheme.contains("cool")) {
+                floor = new Color(40, 58, 84, 220);
+                wall = new Color(22, 32, 52, 210);
+            } else if (scheme.contains("mono")) {
+                floor = new Color(55, 55, 60, 220);
+                wall = new Color(32, 32, 36, 210);
+            } else if (scheme.contains("pastel")) {
+                floor = new Color(70, 54, 72, 220);
+                wall = new Color(40, 30, 48, 210);
+            }
+
+            if ("Night".equalsIgnoreCase(preset)) {
+                floor = new Color(floor.getRed() / 2, floor.getGreen() / 2, floor.getBlue() / 2, floor.getAlpha());
+                wall = new Color(wall.getRed() / 2, wall.getGreen() / 2, wall.getBlue() / 2, wall.getAlpha());
+            } else if ("Sunset".equalsIgnoreCase(preset)) {
+                floor = new Color(
+                        Math.min(255, (int) (floor.getRed() * 1.10)),
+                        Math.min(255, (int) (floor.getGreen() * 0.92)),
+                        Math.min(255, (int) (floor.getBlue() * 0.92)),
+                        floor.getAlpha()
+                );
+                wall = new Color(
+                        Math.min(255, (int) (wall.getRed() * 1.18)),
+                        Math.min(255, (int) (wall.getGreen() * 0.90)),
+                        Math.min(255, (int) (wall.getBlue() * 0.85)),
+                        wall.getAlpha()
+                );
+            }
+
+            return new Color[]{floor, wall};
+        }
+
+        /* ========================== SAFE ITEM GETTERS ========================== */
+
+        private double safeX(FurnitureItem it) { return readNum(it, "getX", 0); }
+        private double safeY(FurnitureItem it) { return readNum(it, "getY", 0); }
+        private double safeW(FurnitureItem it) { return readNum(it, "getW", 60); }
+        private double safeH(FurnitureItem it) { return readNum(it, "getH", 40); }
+
+        private int safeRotationDeg(FurnitureItem it) {
+            Double v = readNumObj(it, "getRotation", null);
+            if (v == null) v = readNumObj(it, "getRotationDeg", null);
+            if (v == null) v = readNumObj(it, "getRotationDegrees", null);
+            return (int) Math.round(v == null ? 0 : v);
+        }
+
+        private int safeShading(FurnitureItem it) {
+            Double v = readNumObj(it, "getShadingPercent", null);
+            if (v == null) v = readNumObj(it, "getShade", null);
+            return (int) Math.round(v == null ? 50 : v);
+        }
+
+        private String safeColorHex(FurnitureItem it) {
+            try {
+                Object v = it.getClass().getMethod("getColorHex").invoke(it);
+                return (v == null) ? null : v.toString();
+            } catch (Throwable ignored) { }
+            return null;
+        }
+
+        private String safeKind(FurnitureItem it) {
+            try {
+                Object k = it.getClass().getMethod("getKind").invoke(it);
+                return (k == null) ? "" : k.toString();
+            } catch (Throwable ignored) { }
+            return "";
+        }
+
+        private double readNum(Object obj, String method, double fallback) {
+            Double v = readNumObj(obj, method, null);
+            return (v == null) ? fallback : v;
+        }
+
+        private Double readNumObj(Object obj, String method, Double fallback) {
+            if (obj == null) return fallback;
+            try {
+                Object v = obj.getClass().getMethod(method).invoke(obj);
+                if (v instanceof Number) return ((Number) v).doubleValue();
+            } catch (Throwable ignored) { }
+            return fallback;
+        }
+
+        /* ========================== DATA TYPES ========================== */
+
+        private class Face {
+            final List<Vec3> pts;
+            final Color color;
+            final double avgDepth;
+            Face(List<Vec3> pts, Color color, double avgDepth) {
+                this.pts = pts;
+                this.color = color;
+                this.avgDepth = avgDepth;
+            }
+        }
+
+        private class Vec3 {
+            final double x, y, z;
+            Vec3(double x, double y, double z) { this.x = x; this.y = y; this.z = z; }
+            Vec3 add(Vec3 o) { return new Vec3(x + o.x, y + o.y, z + o.z); }
+            Vec3 sub(Vec3 o) { return new Vec3(x - o.x, y - o.y, z - o.z); }
+        }
+    }
+}
